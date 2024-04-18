@@ -1,0 +1,11 @@
+[package]
+name = "ruche"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+raylib = "3.7.0"
+iter_tools = "0.15.0"
+
