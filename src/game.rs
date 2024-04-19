@@ -77,12 +77,14 @@ impl Game {
 
         tracing::info!("Making");
         let selected = self.selected.clone().unwrap();
-        if self.board.make_move(
-            self.board
-                .get_square(selected.x as usize, selected.y as usize),
-            self.board
-                .get_square(self.cursor.x as usize, self.cursor.y as usize),
-        ) {
+        let from = self
+            .board
+            .get_square(selected.x as usize, selected.y as usize);
+        let to = self
+            .board
+            .get_square(self.cursor.x as usize, self.cursor.y as usize);
+        tracing::info!("From: {:?} To: {:?}", from, to);
+        if self.board.make_move(from, to) {
             self.board.toggle_turn();
             self.board.generate_moves_current_position();
             self.unset_selected();
