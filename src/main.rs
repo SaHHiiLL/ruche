@@ -27,7 +27,6 @@ fn main() {
 
         if (d.is_mouse_button_pressed(raylib::ffi::MouseButton::MOUSE_LEFT_BUTTON)) {
             if (game.selected.is_some()) {
-                tracing::info!("Making move");
                 game.make_move();
             } else {
                 game.select_piece(&d);

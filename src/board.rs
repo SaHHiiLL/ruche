@@ -30,8 +30,8 @@ enum MoveType {
     None,
     PawnPush,
     PawnDoublePush,
-    PawnCapture,   // When a pawn captures a piece
-    PawnEnPassant, // When a pawn captures a piece en passant
+    PawnCapture,               // When a pawn captures a piece
+    PawnEnPassant(Coordinate), // When a pawn captures a piece en passant
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -49,6 +49,11 @@ impl Piece {
     }
 }
 
+enum PawnCaptureDirection {
+    Left,
+    Right,
+}
+
 impl Piece {
     pub fn get_color(&self) -> PieceColor {
         self.piece_color
@@ -60,9 +65,80 @@ impl Piece {
 }
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+/// Seess the board from whites perspective
 struct Coordinate {
     x: usize,
     y: usize,
+}
+
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+struct SafeCoordinate {
+    x: isize,
+    y: isize,
+}
+
+impl SafeCoordinate {
+    fn new(x: isize, y: isize) -> Self {
+        SafeCoordinate { x, y }
+    }
+
+    fn is_out_of_bounds(&self) -> bool {
+        self.x < 0 || self.x > 7 || self.y < 0 || self.y > 7
+    }
+
+    fn can_move_right(&self) -> bool {
+        self.x < 7
+    }
+
+    fn can_move_left(&self) -> bool {
+        self.x > 0
+    }
+
+    fn can_move_up(&self) -> bool {
+        self.y < 7
+    }
+
+    fn can_move_down(&self) -> bool {
+        self.y > 0
+    }
+
+    fn to_coordinate(&self) -> Coordinate {
+        assert!(!self.is_out_of_bounds());
+        Coordinate {
+            x: self.x as usize,
+            y: self.y as usize,
+        }
+    }
+}
+
+impl Coordinate {
+    fn new(x: usize, y: usize) -> Self {
+        Coordinate { x, y }
+    }
+
+    fn is_right_out_of_bounds(&self) -> bool {
+        self.x > 0
+    }
+
+    fn is_left_out_of_bounds(&self) -> bool {
+        self.x < 7
+    }
+
+    fn is_top_out_of_bounds(&self) -> bool {
+        self.y > 7
+    }
+
+    fn is_bottom_out_of_bounds(&self) -> bool {
+        self.y < 0
+    }
+
+    fn can_move_right(&self) -> bool {
+        !self.is_right_out_of_bounds()
+    }
+
+    fn can_move_left(&self) -> bool {
+        !self.is_left_out_of_bounds()
+    }
 }
 
 #[derive(Debug, Default, Hash, Eq, PartialEq)]
@@ -72,10 +148,7 @@ pub struct BitBoard {
 
 impl BitBoard {
     pub fn set_bit(&mut self, idx: usize) {
-        tracing::info!("Setting bit at {}", idx);
-        tracing::info!("Old Bitboard: {}", self.inner);
         self.inner |= 1u64 << (idx);
-        tracing::info!("New Bitboard: {}", self.inner);
     }
 
     pub fn clear_bit(&mut self, idx: usize) {
@@ -115,6 +188,16 @@ impl From<u16> for Piece {
         }
     }
 }
+
+// 63, 61, 62, 60, 59, 58, 57, 56
+// 55, 54, 53, 52, 51, 50, 49, 48
+// 47, 46, 45, 44, 43, 42, 41, 40
+// 39, 38, 37, 36, 35, 34, 33, 32
+// 31, 30, 29, 28, 27, 26, 25, 24
+// 23, 22, 21, 20, 19, 18, 17, 16
+// 15, 14, 13, 12, 11, 10, 9,  8
+// 7,  6,  5,  4,  3,  2,  1,  0
+//
 
 // 12, 10, 11, 13, 14, 11, 10, 12,
 // 9,  9,  9,  9,  9,  9,  9,  9,
@@ -180,7 +263,6 @@ impl Board {
     fn is_move_avaliable(&self, from: usize, to: usize) -> Option<Move> {
         for m in self.current_moves.iter() {
             if m.from == from && m.to == to {
-                tracing::info!("Move is available");
                 return Some(m.clone());
             }
         }
@@ -188,7 +270,6 @@ impl Board {
     }
 
     pub fn make_move(&mut self, from: usize, to: usize) -> bool {
-        tracing::info!("Making move from {} to {}", from, to);
         let piece = self.get_piece_at_index(from);
         let target = self.get_piece_at_index(to);
 
@@ -218,23 +299,24 @@ impl Board {
                 assert!(target.get_type() == PieceType::None);
                 let bitboard = self.get_bitboard_from_piece(piece);
                 bitboard.clear_bit(from);
-                tracing::info!("setting bit at {}", to);
                 bitboard.set_bit(to);
                 self.board[to] = self.board[from];
                 self.board[from] = 0; // 0 indicates Piece::None
-                tracing::info!("from: {}", self.board[from]);
-                tracing::info!("to: {}", self.board[to]);
+            }
+            MoveType::PawnEnPassant(_) => {
+                todo!();
             }
             MoveType::PawnCapture => {
-                self.capture_piece(mo);
+                tracing::debug!("Capturing piece {:?}", mo);
+                self.capture_piece(&mo);
             }
-
-            _ => todo!(),
+            MoveType::None => todo!(),
         }
+        self.move_history.push(mo);
         true
     }
 
-    fn capture_piece(&mut self, current_move: Move) {
+    fn capture_piece(&mut self, current_move: &Move) {
         let target = self.get_piece_at_index(current_move.to);
         assert!(target.get_type() != PieceType::None);
         let bitboard = self.get_bitboard_from_piece(target);
@@ -254,6 +336,7 @@ impl Board {
     /// This function should be called after each move
     pub fn generate_moves_current_position(&mut self) {
         self.current_moves.clear();
+        assert!(self.current_moves.is_empty());
         let turn = self.get_turn();
 
         let board = self
@@ -284,101 +367,148 @@ impl Board {
 
         // if there a piece in front of the pawn it shall not move
 
-        let co = self.get_coordinates_from_index(current_piece_idx);
-        // calculates the front of the pawn if it's white or black
-        let front = self.get_square(
-            co.x,
-            if piece.piece_color == PieceColor::White {
+        let co = self.get_safe_coordinates_from_index(current_piece_idx);
+
+        let front_co = SafeCoordinate {
+            x: co.x,
+            y: if piece.piece_color == PieceColor::White {
                 co.y - 1
             } else {
                 co.y + 1
             },
-        );
-        let front_piece = self.get_piece_at_index(front);
-        if front_piece.get_type() == PieceType::None {
-            // Add front move to the list
-            self.current_moves.push(Move {
-                from: current_piece_idx,
-                to: front,
-                move_type: MoveType::PawnPush,
-            });
-            // checking for double push
-            if co.y == 6 && piece.piece_color == PieceColor::White {
-                let double_front = self.get_square(co.x, co.y - 2);
-                let double_front_piece = self.get_piece_at_index(double_front);
-                if double_front_piece.get_type() == PieceType::None {
-                    self.current_moves.push(Move {
-                        from: current_piece_idx,
-                        to: double_front,
-                        move_type: MoveType::PawnDoublePush,
-                    });
-                }
-            } else if co.y == 1 && piece.piece_color == PieceColor::Black {
-                let double_front = self.get_square(co.x, co.y + 2);
-                let double_front_piece = self.get_piece_at_index(double_front);
-                if double_front_piece.get_type() == PieceType::None {
-                    self.current_moves.push(Move {
-                        from: current_piece_idx,
-                        to: double_front,
-                        move_type: MoveType::PawnDoublePush,
-                    });
+        };
+
+        if !front_co.is_out_of_bounds() {
+            // calculates the front of the pawn if it's white or black
+            let front = self.get_square(front_co.x as usize, front_co.y as usize);
+            let front_piece = self.get_piece_at_index(front);
+            if front_piece.get_type() == PieceType::None {
+                // Add front move to the list
+                self.current_moves.push(Move {
+                    from: current_piece_idx,
+                    to: front,
+                    move_type: MoveType::PawnPush,
+                });
+                // checking for double push
+                if co.y == 6 && piece.piece_color == PieceColor::White {
+                    let double_front = self.get_square_isize(front_co.x, front_co.y - 1);
+                    let double_front_piece = self.get_piece_at_index(double_front);
+                    if double_front_piece.get_type() == PieceType::None {
+                        self.current_moves.push(Move {
+                            from: current_piece_idx,
+                            to: double_front,
+                            move_type: MoveType::PawnDoublePush,
+                        });
+                    }
+                } else if co.y == 1 && piece.piece_color == PieceColor::Black {
+                    let double_front = self.get_square_isize(front_co.x, front_co.y + 1);
+                    let double_front_piece = self.get_piece_at_index(double_front);
+                    if double_front_piece.get_type() == PieceType::None {
+                        self.current_moves.push(Move {
+                            from: current_piece_idx,
+                            to: double_front,
+                            move_type: MoveType::PawnDoublePush,
+                        });
+                    }
                 }
             }
         }
-
-        // BUG: thread 'main' panicked at src/board.rs:304:13: attempt to subtract with overflow note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-        // check for captures
-        //
-        // BUG: This happens because the cross zone is out of bounds
-
-        let left = self.get_square(
-            if piece.piece_color == PieceColor::White {
-                co.x + 1
-            } else {
-                if co.x == 0 || co.x == 7 {
-                    return;
-                }
-                co.x - 1
-            },
-            if piece.piece_color == PieceColor::White {
-                co.y - 1
-            } else {
-                co.y + 1
-            },
-        );
-
-        let right = self.get_square(
-            if piece.piece_color == PieceColor::White {
-                co.x + 1
-            } else {
-                co.x - 1
-            },
-            if piece.piece_color == PieceColor::White {
-                co.y - 1
-            } else {
-                co.y + 1
-            },
-        );
-
-        let left_piece = self.get_piece_at_index(left);
-        let right_piece = self.get_piece_at_index(right);
-
-        if left_piece.get_color() != piece.get_color() && left_piece.get_type() != PieceType::None {
-            self.current_moves.push(Move {
-                from: current_piece_idx,
-                to: left,
-                move_type: MoveType::PawnCapture,
-            });
+        if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Right) {
+            self.current_moves.push(m);
         }
 
-        if right_piece.get_color() != piece.get_color() && right_piece.get_type() != PieceType::None
-        {
-            self.current_moves.push(Move {
-                from: current_piece_idx,
-                to: right,
-                move_type: MoveType::PawnCapture,
-            });
+        if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Left) {
+            self.current_moves.push(m);
         }
+
+        if let Some(m) = self.enpassant_capture(piece, &co) {
+            self.current_moves.push(m);
+        }
+    }
+
+    // TODO::
+    fn enpassant_capture(&self, piece: Piece, current_cord: &SafeCoordinate) -> Option<Move> {
+        // if the last move by the opponent was a double pawn push on either side of the current
+        // pawn we can capture it en passant
+
+        if self.move_history.is_empty() {
+            return None;
+        }
+
+        let last_move = self.move_history.last()?;
+
+        if last_move.move_type != MoveType::PawnDoublePush {
+            return None;
+        }
+
+        if current_cord.y != 1 || current_cord.y != 6 {
+            return None;
+        }
+
+        let last_move_cord = self.get_safe_coordinates_from_index(last_move.to);
+        let end_pos = Coordinate {
+            x: last_move_cord.x as usize,
+            y: if piece.get_color() == PieceColor::White {
+                (last_move_cord.y as usize) + 1
+            } else {
+                last_move_cord.y as usize - 1
+            },
+        };
+
+        let mov = Move {
+            from: self.get_index_from_coordinates(current_cord.to_coordinate()),
+            to: self.get_index_from_coordinates(end_pos),
+            move_type: MoveType::PawnEnPassant(last_move_cord.to_coordinate()),
+        };
+        Some(mov)
+    }
+
+    fn pawn_capture(
+        &self,
+        piece: Piece,
+        current_cord: &SafeCoordinate,
+        side: PawnCaptureDirection,
+    ) -> Option<Move> {
+        if current_cord.is_out_of_bounds() {
+            return None;
+        }
+        let right_co = SafeCoordinate {
+            x: match side {
+                PawnCaptureDirection::Right => current_cord.x + 1,
+                PawnCaptureDirection::Left => current_cord.x - 1,
+            },
+            y: if piece.get_color() == PieceColor::White {
+                current_cord.y - 1
+            } else {
+                current_cord.y + 1
+            },
+        };
+        if right_co.is_out_of_bounds() {
+            return None;
+        }
+
+        let right_piece = self.get_piece_at_index(
+            self.get_square(right_co.to_coordinate().x, right_co.to_coordinate().y),
+        );
+
+        if right_piece.get_color() == piece.get_color() {
+            return None;
+        }
+
+        if right_piece.get_type() == PieceType::None {
+            tracing::debug!("No piece to capture");
+            return None;
+        }
+        tracing::debug!("Piece to capture: {:?}", right_piece);
+
+        let right = self.get_square_isize(right_co.x, right_co.y);
+        let mov = Move {
+            from: self.get_index_from_coordinates(current_cord.to_coordinate()),
+            to: right,
+            move_type: MoveType::PawnCapture,
+        };
+        tracing::debug!("Pawn capture: {:?}", mov);
+        Some(mov)
     }
 
     /// Returns the index of the square given the x and y coordinates
@@ -391,6 +521,12 @@ impl Board {
         let x = idx % 8;
         let y = idx / 8;
         Coordinate { x, y }
+    }
+
+    fn get_safe_coordinates_from_index(&self, idx: usize) -> SafeCoordinate {
+        let x = idx % 8;
+        let y = idx / 8;
+        SafeCoordinate::new(x as isize, y as isize)
     }
 
     //TODO: remove this function
@@ -414,6 +550,10 @@ impl Board {
                 print!("{:?},", m);
             }
             println!();
+        });
+
+        self.current_moves.iter().for_each(|m| {
+            println!("{:?}", m);
         });
     }
 
@@ -463,9 +603,17 @@ impl Board {
         res
     }
 
+    pub fn get_square_isize(&self, x: isize, y: isize) -> usize {
+        let res = (y * 8) + x;
+        assert!((0..64).contains(&res));
+        res as usize
+    }
+
     /// Gets the piece at the given index as a Piece struct
     pub fn get_piece_at_index(&self, idx: usize) -> Piece {
-        self.board[idx].into()
+        let piece = self.board[idx].into();
+        tracing::trace!("Piece at index: {:?} is {:?}", idx, piece);
+        piece
     }
 
     /// Loads a position from a FEN string
