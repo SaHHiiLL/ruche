@@ -303,11 +303,24 @@ impl Board {
                 self.board[to] = self.board[from];
                 self.board[from] = 0; // 0 indicates Piece::None
             }
-            MoveType::PawnEnPassant(_) => {
-                todo!();
+            MoveType::PawnEnPassant(capture_piece) => {
+                let pawn_to_capture_idx = self.get_square(capture_piece.x, capture_piece.y);
+                let pawn_to_capture = self.get_piece_at_index(pawn_to_capture_idx);
+                assert!(pawn_to_capture.get_type() == PieceType::Pawn);
+                assert!(pawn_to_capture.get_color() != piece.get_color());
+                assert!(target.get_type() == PieceType::None);
+                let bitboard = self.get_bitboard_from_piece(piece);
+                bitboard.clear_bit(pawn_to_capture_idx);
+                self.board[pawn_to_capture_idx] = 0;
+
+                // move the piece to the target square
+                let bitboard = self.get_bitboard_from_piece(piece);
+                bitboard.clear_bit(from);
+                bitboard.set_bit(to);
+                self.board[to] = self.board[from];
+                self.board[from] = 0; // 0 indicates Piece::None
             }
             MoveType::PawnCapture => {
-                tracing::debug!("Capturing piece {:?}", mo);
                 self.capture_piece(&mo);
             }
             MoveType::None => todo!(),
@@ -432,6 +445,7 @@ impl Board {
         // pawn we can capture it en passant
 
         if self.move_history.is_empty() {
+            tracing::debug!("No Move history");
             return None;
         }
 
@@ -441,26 +455,48 @@ impl Board {
             return None;
         }
 
-        if current_cord.y != 1 || current_cord.y != 6 {
-            return None;
+        let dir = [1, -1];
+
+        for d in dir.iter() {
+            let adj = SafeCoordinate {
+                x: current_cord.x + *d,
+                y: current_cord.y,
+            };
+
+            if adj.is_out_of_bounds() {
+                continue;
+            }
+            let adj = adj.to_coordinate();
+
+            let adj_piece = self.get_piece_at_index(self.get_square(adj.x, adj.y));
+            if adj_piece.get_type() != PieceType::Pawn {
+                continue;
+            }
+            if adj_piece.get_color() == piece.get_color() {
+                continue;
+            }
+            let last_move_cord = self.get_coordinates_from_index(last_move.to);
+
+            if last_move_cord.y == adj.y && last_move_cord.x == adj.x {
+                let end_pos = Coordinate {
+                    x: adj.x,
+                    y: if piece.get_color() == PieceColor::White {
+                        adj.y - 1
+                    } else {
+                        adj.y + 1
+                    },
+                };
+
+                let mov = Move {
+                    from: self.get_index_from_coordinates(current_cord.to_coordinate()),
+                    to: self.get_index_from_coordinates(end_pos),
+                    move_type: MoveType::PawnEnPassant(last_move_cord),
+                };
+
+                return Some(mov);
+            }
         }
-
-        let last_move_cord = self.get_safe_coordinates_from_index(last_move.to);
-        let end_pos = Coordinate {
-            x: last_move_cord.x as usize,
-            y: if piece.get_color() == PieceColor::White {
-                (last_move_cord.y as usize) + 1
-            } else {
-                last_move_cord.y as usize - 1
-            },
-        };
-
-        let mov = Move {
-            from: self.get_index_from_coordinates(current_cord.to_coordinate()),
-            to: self.get_index_from_coordinates(end_pos),
-            move_type: MoveType::PawnEnPassant(last_move_cord.to_coordinate()),
-        };
-        Some(mov)
+        None
     }
 
     fn pawn_capture(
@@ -496,10 +532,8 @@ impl Board {
         }
 
         if right_piece.get_type() == PieceType::None {
-            tracing::debug!("No piece to capture");
             return None;
         }
-        tracing::debug!("Piece to capture: {:?}", right_piece);
 
         let right = self.get_square_isize(right_co.x, right_co.y);
         let mov = Move {
@@ -507,7 +541,6 @@ impl Board {
             to: right,
             move_type: MoveType::PawnCapture,
         };
-        tracing::debug!("Pawn capture: {:?}", mov);
         Some(mov)
     }
 
@@ -612,7 +645,6 @@ impl Board {
     /// Gets the piece at the given index as a Piece struct
     pub fn get_piece_at_index(&self, idx: usize) -> Piece {
         let piece = self.board[idx].into();
-        tracing::trace!("Piece at index: {:?} is {:?}", idx, piece);
         piece
     }
 
