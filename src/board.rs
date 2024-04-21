@@ -366,7 +366,16 @@ impl Board {
             if let PieceType::Pawn = piece.piece_type {
                 self.generate_pawn_moves(i, *piece);
             }
+            match piece.piece_type {
+                PieceType::Pawn => self.generate_pawn_moves(i, *piece),
+                PieceType::Rook => self.generate_rook_moves(i, *piece),
+                _ => todo!(),
+            }
         }
+    }
+
+    fn generate_rook_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+        todo!();
     }
 
     fn generate_pawn_moves(&mut self, current_piece_idx: usize, piece: Piece) {
@@ -644,8 +653,7 @@ impl Board {
 
     /// Gets the piece at the given index as a Piece struct
     pub fn get_piece_at_index(&self, idx: usize) -> Piece {
-        let piece = self.board[idx].into();
-        piece
+        self.board[idx].into()
     }
 
     /// Loads a position from a FEN string
