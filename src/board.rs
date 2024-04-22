@@ -24,7 +24,7 @@ pub struct Move {
     move_type: MoveType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum MoveType {
     #[default]
     None,
@@ -32,6 +32,12 @@ enum MoveType {
     PawnDoublePush,
     PawnCapture,               // When a pawn captures a piece
     PawnEnPassant(Coordinate), // When a pawn captures a piece en passant
+
+    QueenMove,
+    RookMove,
+    BishopMove,
+    KnightMove,
+    KingMove,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -324,6 +330,7 @@ impl Board {
                 self.capture_piece(&mo);
             }
             MoveType::None => todo!(),
+            _ => todo!("Forgor to implement moves lol"),
         }
         self.move_history.push(mo);
         true
@@ -363,19 +370,172 @@ impl Board {
             if piece.get_color() != turn {
                 continue;
             }
-            if let PieceType::Pawn = piece.piece_type {
-                self.generate_pawn_moves(i, *piece);
-            }
             match piece.piece_type {
                 PieceType::Pawn => self.generate_pawn_moves(i, *piece),
                 PieceType::Rook => self.generate_rook_moves(i, *piece),
-                _ => todo!(),
+                PieceType::Bishop => self.generate_bishop_moves(i, *piece),
+                PieceType::Queen => self.generate_queen_moves(i, *piece),
+                PieceType::Knight => self.generate_knight_moves(i, *piece),
+                PieceType::King => self.generate_king_moves(i, *piece),
+                PieceType::None => {
+                    continue;
+                }
+            }
+        }
+    }
+
+    fn generate_queen_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+        assert!(piece.piece_type == PieceType::Queen);
+        let directions = [
+            SafeCoordinate::new(1, 1),
+            SafeCoordinate::new(-1, 1),
+            SafeCoordinate::new(1, -1),
+            SafeCoordinate::new(-1, -1),
+            SafeCoordinate::new(0, 1),
+            SafeCoordinate::new(0, -1),
+            SafeCoordinate::new(1, 0),
+            SafeCoordinate::new(-1, 0),
+        ];
+        self.generate_moves_for_direction(
+            current_piece_idx,
+            piece,
+            &directions,
+            MoveType::QueenMove,
+        );
+    }
+
+    fn generate_king_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+        assert!(piece.piece_type == PieceType::King);
+        let directions = [
+            SafeCoordinate::new(1, 1),
+            SafeCoordinate::new(-1, 1),
+            SafeCoordinate::new(1, -1),
+            SafeCoordinate::new(-1, -1),
+            SafeCoordinate::new(0, 1),
+            SafeCoordinate::new(0, -1),
+            SafeCoordinate::new(1, 0),
+            SafeCoordinate::new(-1, 0),
+        ];
+        for dir in directions.iter() {
+            let current = self.get_safe_coordinates_from_index(current_piece_idx);
+            let target = SafeCoordinate {
+                x: current.x + dir.x,
+                y: current.y + dir.y,
+            };
+            if target.is_out_of_bounds() {
+                continue;
+            }
+            let idx = self.get_square_isize(target.x, target.y);
+            let target_piece = self.get_piece_at_index(idx);
+            if target_piece.get_color() == piece.get_color() {
+                continue;
+            }
+            self.current_moves.push(Move {
+                from: current_piece_idx,
+                to: idx,
+                move_type: MoveType::KingMove,
+            });
+        }
+    }
+
+    fn generate_knight_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+        assert!(piece.piece_type == PieceType::Knight);
+        let directions = [
+            SafeCoordinate::new(1, 2),
+            SafeCoordinate::new(-1, 2),
+            SafeCoordinate::new(1, -2),
+            SafeCoordinate::new(-1, -2),
+            SafeCoordinate::new(2, 1),
+            SafeCoordinate::new(-2, 1),
+            SafeCoordinate::new(2, -1),
+            SafeCoordinate::new(-2, -1),
+        ];
+        for dir in directions.iter() {
+            let current = self.get_safe_coordinates_from_index(current_piece_idx);
+            let target = SafeCoordinate {
+                x: current.x + dir.x,
+                y: current.y + dir.y,
+            };
+            if target.is_out_of_bounds() {
+                continue;
+            }
+            let idx = self.get_square_isize(target.x, target.y);
+            let target_piece = self.get_piece_at_index(idx);
+            if target_piece.get_color() == piece.get_color() {
+                continue;
+            }
+            self.current_moves.push(Move {
+                from: current_piece_idx,
+                to: idx,
+                move_type: MoveType::KnightMove,
+            });
+        }
+    }
+
+    fn generate_bishop_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+        assert!(piece.piece_type == PieceType::Bishop);
+        let direction = [
+            SafeCoordinate::new(1, 1),
+            SafeCoordinate::new(-1, 1),
+            SafeCoordinate::new(1, -1),
+            SafeCoordinate::new(-1, -1),
+        ];
+        self.generate_moves_for_direction(
+            current_piece_idx,
+            piece,
+            &direction,
+            MoveType::BishopMove,
+        );
+    }
+
+    fn generate_moves_for_direction(
+        &mut self,
+        current_piece_idx: usize,
+        piece: Piece,
+        directions: &[SafeCoordinate],
+        move_type: MoveType,
+    ) {
+        let co = self.get_safe_coordinates_from_index(current_piece_idx);
+
+        for dir in directions.iter() {
+            let mut current = co;
+            loop {
+                current.x += dir.x;
+                current.y += dir.y;
+                if current.is_out_of_bounds() {
+                    break;
+                }
+                let idx = self.get_square_isize(current.x, current.y);
+                let target = self.get_piece_at_index(idx);
+                if target.get_color() == piece.get_color() {
+                    break;
+                }
+                self.current_moves.push(Move {
+                    from: current_piece_idx,
+                    to: idx,
+                    move_type,
+                });
+                if target.get_type() != PieceType::None {
+                    break;
+                }
             }
         }
     }
 
     fn generate_rook_moves(&mut self, current_piece_idx: usize, piece: Piece) {
-        todo!();
+        assert!(piece.piece_type == PieceType::Rook || piece.piece_type == PieceType::Queen);
+        let directions = [
+            SafeCoordinate::new(0, 1),
+            SafeCoordinate::new(0, -1),
+            SafeCoordinate::new(1, 0),
+            SafeCoordinate::new(-1, 0),
+        ];
+        self.generate_moves_for_direction(
+            current_piece_idx,
+            piece,
+            &directions,
+            MoveType::RookMove,
+        );
     }
 
     fn generate_pawn_moves(&mut self, current_piece_idx: usize, piece: Piece) {
