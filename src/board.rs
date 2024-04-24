@@ -53,6 +53,10 @@ impl Piece {
             piece_type,
         }
     }
+
+    pub fn is_none(&self) -> bool {
+        self.piece_type == PieceType::None
+    }
 }
 
 enum PawnCaptureDirection {
@@ -92,58 +96,12 @@ impl SafeCoordinate {
         self.x < 0 || self.x > 7 || self.y < 0 || self.y > 7
     }
 
-    fn can_move_right(&self) -> bool {
-        self.x < 7
-    }
-
-    fn can_move_left(&self) -> bool {
-        self.x > 0
-    }
-
-    fn can_move_up(&self) -> bool {
-        self.y < 7
-    }
-
-    fn can_move_down(&self) -> bool {
-        self.y > 0
-    }
-
     fn to_coordinate(&self) -> Coordinate {
         assert!(!self.is_out_of_bounds());
         Coordinate {
             x: self.x as usize,
             y: self.y as usize,
         }
-    }
-}
-
-impl Coordinate {
-    fn new(x: usize, y: usize) -> Self {
-        Coordinate { x, y }
-    }
-
-    fn is_right_out_of_bounds(&self) -> bool {
-        self.x > 0
-    }
-
-    fn is_left_out_of_bounds(&self) -> bool {
-        self.x < 7
-    }
-
-    fn is_top_out_of_bounds(&self) -> bool {
-        self.y > 7
-    }
-
-    fn is_bottom_out_of_bounds(&self) -> bool {
-        self.y < 0
-    }
-
-    fn can_move_right(&self) -> bool {
-        !self.is_right_out_of_bounds()
-    }
-
-    fn can_move_left(&self) -> bool {
-        !self.is_left_out_of_bounds()
     }
 }
 
@@ -161,8 +119,8 @@ impl BitBoard {
         self.inner &= !(1u64 << (idx));
     }
 
-    pub fn get_bit(&self, idx: usize) -> bool {
-        (self.inner & (1u64 << idx)) != 0
+    pub fn _get_bit(&self, idx: usize) -> bool {
+        (self.inner & (1u64 << (idx))) != 0
     }
 }
 
@@ -291,7 +249,6 @@ impl Board {
 
         // if no move is available return
         let Some(mo) = self.is_move_avaliable(from, to) else {
-            tracing::error!("Invalid move");
             return false;
         };
 
@@ -302,12 +259,7 @@ impl Board {
             MoveType::PawnPush | MoveType::PawnDoublePush => {
                 // if the move is a pawn push or double push
                 // we need to update the bitboard
-                assert!(target.get_type() == PieceType::None);
-                let bitboard = self.get_bitboard_from_piece(piece);
-                bitboard.clear_bit(from);
-                bitboard.set_bit(to);
-                self.board[to] = self.board[from];
-                self.board[from] = 0; // 0 indicates Piece::None
+                self.move_piece(&mo);
             }
             MoveType::PawnEnPassant(capture_piece) => {
                 let pawn_to_capture_idx = self.get_square(capture_piece.x, capture_piece.y);
@@ -318,38 +270,54 @@ impl Board {
                 let bitboard = self.get_bitboard_from_piece(piece);
                 bitboard.clear_bit(pawn_to_capture_idx);
                 self.board[pawn_to_capture_idx] = 0;
-
-                // move the piece to the target square
-                let bitboard = self.get_bitboard_from_piece(piece);
-                bitboard.clear_bit(from);
-                bitboard.set_bit(to);
-                self.board[to] = self.board[from];
-                self.board[from] = 0; // 0 indicates Piece::None
+                self.move_piece(&mo);
             }
             MoveType::PawnCapture => {
                 self.capture_piece(&mo);
+                self.move_piece(&mo);
+            }
+            MoveType::QueenMove
+            | MoveType::KingMove
+            | MoveType::RookMove
+            | MoveType::BishopMove
+            | MoveType::KnightMove => {
+                // if the target square is not empty we need to capture the piece
+                if target.get_type() != PieceType::None {
+                    self.capture_piece(&mo);
+                }
+                self.move_piece(&mo);
             }
             MoveType::None => todo!(),
-            _ => todo!("Forgor to implement moves lol"),
         }
         self.move_history.push(mo);
         true
     }
 
-    fn capture_piece(&mut self, current_move: &Move) {
-        let target = self.get_piece_at_index(current_move.to);
-        assert!(target.get_type() != PieceType::None);
-        let bitboard = self.get_bitboard_from_piece(target);
-        bitboard.clear_bit(current_move.to);
-        self.board[current_move.to] = 0;
+    fn promote_pawn(&mut self, piece_to: Piece, mo: &Move) {
+        todo!("Not implemented");
+    }
 
-        // move the piece to the target square
+    /// Only moves the piece on the board
+    /// does not perform a capture and will fail the assert otherwise
+    fn move_piece(&mut self, current_move: &Move) {
+        let target = self.get_piece_at_index(current_move.to);
+        assert!(target.get_type() == PieceType::None);
         let piece = self.get_piece_at_index(current_move.from);
         let bitboard = self.get_bitboard_from_piece(piece);
         bitboard.clear_bit(current_move.from);
         bitboard.set_bit(current_move.to);
         self.board[current_move.to] = self.board[current_move.from];
         self.board[current_move.from] = 0;
+    }
+
+    /// Captures the piece from the move
+    /// does not move the piece in question
+    fn capture_piece(&mut self, current_move: &Move) {
+        let target = self.get_piece_at_index(current_move.to);
+        assert!(target.get_type() != PieceType::None);
+        let bitboard = self.get_bitboard_from_piece(target);
+        bitboard.clear_bit(current_move.to);
+        self.board[current_move.to] = 0;
     }
 
     /// Clears the moves list and generates all possible moves for the current position
@@ -404,6 +372,7 @@ impl Board {
         );
     }
 
+    // TODO: checks
     fn generate_king_moves(&mut self, current_piece_idx: usize, piece: Piece) {
         assert!(piece.piece_type == PieceType::King);
         let directions = [
@@ -427,7 +396,9 @@ impl Board {
             }
             let idx = self.get_square_isize(target.x, target.y);
             let target_piece = self.get_piece_at_index(idx);
-            if target_piece.get_color() == piece.get_color() {
+            if target_piece.get_type() != PieceType::None
+                && target_piece.get_color() == piece.get_color()
+            {
                 continue;
             }
             self.current_moves.push(Move {
@@ -450,23 +421,30 @@ impl Board {
             SafeCoordinate::new(2, -1),
             SafeCoordinate::new(-2, -1),
         ];
+        let current_cord = self.get_safe_coordinates_from_index(current_piece_idx);
         for dir in directions.iter() {
-            let current = self.get_safe_coordinates_from_index(current_piece_idx);
-            let target = SafeCoordinate {
-                x: current.x + dir.x,
-                y: current.y + dir.y,
+            let target_cord = SafeCoordinate {
+                x: current_cord.x + dir.x,
+                y: current_cord.y + dir.y,
             };
-            if target.is_out_of_bounds() {
+
+            if target_cord.is_out_of_bounds() {
                 continue;
             }
-            let idx = self.get_square_isize(target.x, target.y);
-            let target_piece = self.get_piece_at_index(idx);
-            if target_piece.get_color() == piece.get_color() {
+            let target_cord = target_cord.to_coordinate();
+
+            let target_piece =
+                self.get_piece_at_index(self.get_square(target_cord.x, target_cord.y));
+
+            if target_piece.get_type() != PieceType::None
+                && target_piece.get_color() == piece.get_color()
+            {
                 continue;
             }
+
             self.current_moves.push(Move {
                 from: current_piece_idx,
-                to: idx,
+                to: self.get_square(target_cord.x, target_cord.y),
                 move_type: MoveType::KnightMove,
             });
         }
@@ -495,31 +473,42 @@ impl Board {
         directions: &[SafeCoordinate],
         move_type: MoveType,
     ) {
-        let co = self.get_safe_coordinates_from_index(current_piece_idx);
+        let piece_cord = self.get_safe_coordinates_from_index(current_piece_idx);
 
         for dir in directions.iter() {
-            let mut current = co;
-            loop {
-                current.x += dir.x;
-                current.y += dir.y;
-                if current.is_out_of_bounds() {
-                    break;
+            let mut current_look_up_cord = SafeCoordinate {
+                x: piece_cord.x + dir.x,
+                y: piece_cord.y + dir.y,
+            };
+            'beyond: loop {
+                if current_look_up_cord.is_out_of_bounds() {
+                    break 'beyond;
                 }
-                let idx = self.get_square_isize(current.x, current.y);
-                let target = self.get_piece_at_index(idx);
-                if target.get_color() == piece.get_color() {
-                    break;
+                let cluc = current_look_up_cord.to_coordinate();
+
+                let current_look_up_piece = self.get_piece_at_index_from_cord(&cluc);
+
+                if !current_look_up_piece.is_none()
+                    && current_look_up_piece.get_color() == piece.get_color()
+                {
+                    break 'beyond;
                 }
-                self.current_moves.push(Move {
+                let mov = Move {
                     from: current_piece_idx,
-                    to: idx,
+                    to: self.get_index_from_coordinates(cluc),
                     move_type,
-                });
-                if target.get_type() != PieceType::None {
-                    break;
-                }
+                };
+                self.current_moves.push(mov);
+                current_look_up_cord = SafeCoordinate {
+                    x: current_look_up_cord.x + dir.x,
+                    y: current_look_up_cord.y + dir.y,
+                };
             }
         }
+    }
+
+    fn get_piece_at_index_from_cord(&self, cord: &Coordinate) -> Piece {
+        self.get_piece_at_index(self.get_square(cord.x, cord.y))
     }
 
     fn generate_rook_moves(&mut self, current_piece_idx: usize, piece: Piece) {
@@ -778,7 +767,7 @@ impl Board {
                 PieceType::Bishop => &mut self.white_bishop_bitboard,
                 PieceType::Queen => &mut self.white_queen_bitboard,
                 PieceType::King => &mut self.white_king_bitboard,
-                PieceType::None => panic!("Invalid Piece Type"),
+                PieceType::None => panic!("Invalid Piece Type, {:?}", piece.piece_type),
             },
             PieceColor::Black => match piece.piece_type {
                 PieceType::Pawn => &mut self.black_pawn_bitboard,
@@ -787,7 +776,7 @@ impl Board {
                 PieceType::Bishop => &mut self.black_bishop_bitboard,
                 PieceType::Queen => &mut self.black_queen_bitboard,
                 PieceType::King => &mut self.black_king_bitboard,
-                PieceType::None => panic!("Invalid Piece Type"),
+                PieceType::None => panic!("Invalid Piece Type, {:?}", piece.piece_type),
             },
         }
     }
@@ -836,7 +825,6 @@ impl Board {
                     x = 0;
                 }
                 'r' => {
-                    println!("r");
                     let idx = self.get_square(x, y);
                     self.black_rook_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Rook as u16;

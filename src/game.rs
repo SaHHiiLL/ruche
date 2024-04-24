@@ -1,6 +1,4 @@
 use crate::board::{self, Piece, PieceColor, PieceType};
-use iter_tools::Itertools;
-use raylib::prelude::*;
 use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Clone, Default)]
@@ -16,7 +14,7 @@ impl PartialEq for Vector2 {
 }
 
 pub struct Game {
-    size: u32,
+    _size: u32,
     x: u32,
     y: u32,
     cell_size: u32,
@@ -28,12 +26,12 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(size: u32, x: u32, y: u32) -> Self {
+    pub fn new(_size: u32, x: u32, y: u32) -> Self {
         Self {
-            size,
+            _size,
             x,
             y,
-            cell_size: size / 8,
+            cell_size: _size / 8,
             board: board::Board::new(),
 
             cursor: Vector2 { x: 0.0, y: 0.0 },
@@ -101,18 +99,12 @@ impl Game {
         let selected_color =
             raylib::core::color::Color::from_hex("8ab7ff").expect("Error parsing hex");
 
-        // this is important as it loops over the board in reverse just to display it correctly
         let copy_arr = self.board.clone_board();
 
         for (idx, p) in copy_arr.iter().enumerate() {
             let x = idx % 8;
             let y = idx / 8;
             let color = if (x + y) % 2 == 0 { white } else { black };
-
-            let pos = Vector2 {
-                x: x as f32,
-                y: y as f32,
-            };
 
             if self.cursor.x as usize == x as usize && self.cursor.y as usize == y as usize {
                 d.draw_rectangle(
