@@ -188,6 +188,9 @@ pub struct Board {
     black_queen_bitboard: BitBoard,
     black_king_bitboard: BitBoard,
 
+    black_control_bitboard: BitBoard,
+    white_control_bitboard: BitBoard,
+
     /// Each cell holds a value which represents a piece
     board: [u16; 64],
 
@@ -221,9 +224,13 @@ impl Board {
             black_bishop_bitboard: BitBoard { inner: 0 },
             black_queen_bitboard: BitBoard { inner: 0 },
             black_king_bitboard: BitBoard { inner: 0 },
+
+            white_control_bitboard: BitBoard { inner: 0 },
+            black_control_bitboard: BitBoard { inner: 0 },
         }
     }
 
+    //TODO: add king checks
     fn is_move_avaliable(&self, from: usize, to: usize) -> Option<Move> {
         for m in self.current_moves.iter() {
             if m.from == from && m.to == to {
@@ -338,7 +345,7 @@ impl Board {
             if piece.get_color() != turn {
                 continue;
             }
-            match piece.piece_type {
+            let moves = match piece.piece_type {
                 PieceType::Pawn => self.generate_pawn_moves(i, *piece),
                 PieceType::Rook => self.generate_rook_moves(i, *piece),
                 PieceType::Bishop => self.generate_bishop_moves(i, *piece),
@@ -348,11 +355,12 @@ impl Board {
                 PieceType::None => {
                     continue;
                 }
-            }
+            };
+            self.current_moves.extend(moves);
         }
     }
 
-    fn generate_queen_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_queen_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::Queen);
         let directions = [
             SafeCoordinate::new(1, 1),
@@ -369,11 +377,11 @@ impl Board {
             piece,
             &directions,
             MoveType::QueenMove,
-        );
+        )
     }
 
     // TODO: checks
-    fn generate_king_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_king_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::King);
         let directions = [
             SafeCoordinate::new(1, 1),
@@ -385,6 +393,7 @@ impl Board {
             SafeCoordinate::new(1, 0),
             SafeCoordinate::new(-1, 0),
         ];
+        let mut res = vec![];
         for dir in directions.iter() {
             let current = self.get_safe_coordinates_from_index(current_piece_idx);
             let target = SafeCoordinate {
@@ -401,15 +410,16 @@ impl Board {
             {
                 continue;
             }
-            self.current_moves.push(Move {
+            res.push(Move {
                 from: current_piece_idx,
                 to: idx,
                 move_type: MoveType::KingMove,
             });
         }
+        res
     }
 
-    fn generate_knight_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_knight_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::Knight);
         let directions = [
             SafeCoordinate::new(1, 2),
@@ -422,6 +432,7 @@ impl Board {
             SafeCoordinate::new(-2, -1),
         ];
         let current_cord = self.get_safe_coordinates_from_index(current_piece_idx);
+        let mut res = vec![];
         for dir in directions.iter() {
             let target_cord = SafeCoordinate {
                 x: current_cord.x + dir.x,
@@ -442,15 +453,16 @@ impl Board {
                 continue;
             }
 
-            self.current_moves.push(Move {
+            res.push(Move {
                 from: current_piece_idx,
                 to: self.get_square(target_cord.x, target_cord.y),
                 move_type: MoveType::KnightMove,
             });
         }
+        res
     }
 
-    fn generate_bishop_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_bishop_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::Bishop);
         let direction = [
             SafeCoordinate::new(1, 1),
@@ -463,7 +475,7 @@ impl Board {
             piece,
             &direction,
             MoveType::BishopMove,
-        );
+        )
     }
 
     fn generate_moves_for_direction(
@@ -472,7 +484,8 @@ impl Board {
         piece: Piece,
         directions: &[SafeCoordinate],
         move_type: MoveType,
-    ) {
+    ) -> Vec<Move> {
+        let mut res = vec![];
         let piece_cord = self.get_safe_coordinates_from_index(current_piece_idx);
 
         for dir in directions.iter() {
@@ -498,20 +511,21 @@ impl Board {
                     to: self.get_index_from_coordinates(cluc),
                     move_type,
                 };
-                self.current_moves.push(mov);
+                res.push(mov);
                 current_look_up_cord = SafeCoordinate {
                     x: current_look_up_cord.x + dir.x,
                     y: current_look_up_cord.y + dir.y,
                 };
             }
         }
+        res
     }
 
     fn get_piece_at_index_from_cord(&self, cord: &Coordinate) -> Piece {
         self.get_piece_at_index(self.get_square(cord.x, cord.y))
     }
 
-    fn generate_rook_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_rook_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::Rook || piece.piece_type == PieceType::Queen);
         let directions = [
             SafeCoordinate::new(0, 1),
@@ -519,15 +533,10 @@ impl Board {
             SafeCoordinate::new(1, 0),
             SafeCoordinate::new(-1, 0),
         ];
-        self.generate_moves_for_direction(
-            current_piece_idx,
-            piece,
-            &directions,
-            MoveType::RookMove,
-        );
+        self.generate_moves_for_direction(current_piece_idx, piece, &directions, MoveType::RookMove)
     }
 
-    fn generate_pawn_moves(&mut self, current_piece_idx: usize, piece: Piece) {
+    fn generate_pawn_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
         assert!(piece.piece_type == PieceType::Pawn);
 
         // Pawns can move forward one square if the square is empty
@@ -539,6 +548,7 @@ impl Board {
         // if there a piece in front of the pawn it shall not move
 
         let co = self.get_safe_coordinates_from_index(current_piece_idx);
+        let mut res = vec![];
 
         let front_co = SafeCoordinate {
             x: co.x,
@@ -555,7 +565,7 @@ impl Board {
             let front_piece = self.get_piece_at_index(front);
             if front_piece.get_type() == PieceType::None {
                 // Add front move to the list
-                self.current_moves.push(Move {
+                res.push(Move {
                     from: current_piece_idx,
                     to: front,
                     move_type: MoveType::PawnPush,
@@ -565,7 +575,7 @@ impl Board {
                     let double_front = self.get_square_isize(front_co.x, front_co.y - 1);
                     let double_front_piece = self.get_piece_at_index(double_front);
                     if double_front_piece.get_type() == PieceType::None {
-                        self.current_moves.push(Move {
+                        res.push(Move {
                             from: current_piece_idx,
                             to: double_front,
                             move_type: MoveType::PawnDoublePush,
@@ -575,7 +585,7 @@ impl Board {
                     let double_front = self.get_square_isize(front_co.x, front_co.y + 1);
                     let double_front_piece = self.get_piece_at_index(double_front);
                     if double_front_piece.get_type() == PieceType::None {
-                        self.current_moves.push(Move {
+                        res.push(Move {
                             from: current_piece_idx,
                             to: double_front,
                             move_type: MoveType::PawnDoublePush,
@@ -585,16 +595,17 @@ impl Board {
             }
         }
         if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Right) {
-            self.current_moves.push(m);
+            res.push(m);
         }
 
         if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Left) {
-            self.current_moves.push(m);
+            res.push(m);
         }
 
         if let Some(m) = self.enpassant_capture(piece, &co) {
-            self.current_moves.push(m);
+            res.push(m);
         }
+        res
     }
 
     // TODO::
