@@ -553,9 +553,9 @@ impl Board {
         let front_co = SafeCoordinate {
             x: co.x,
             y: if piece.piece_color == PieceColor::White {
-                co.y - 1
-            } else {
                 co.y + 1
+            } else {
+                co.y - 1
             },
         };
 
@@ -650,9 +650,9 @@ impl Board {
                 let end_pos = Coordinate {
                     x: adj.x,
                     y: if piece.get_color() == PieceColor::White {
-                        adj.y - 1
-                    } else {
                         adj.y + 1
+                    } else {
+                        adj.y - 1
                     },
                 };
 
@@ -683,9 +683,9 @@ impl Board {
                 PawnCaptureDirection::Left => current_cord.x - 1,
             },
             y: if piece.get_color() == PieceColor::White {
-                current_cord.y - 1
-            } else {
                 current_cord.y + 1
+            } else {
+                current_cord.y - 1
             },
         };
         if right_co.is_out_of_bounds() {
@@ -822,8 +822,8 @@ impl Board {
     /// board.load_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
     /// ```
     pub fn load_position(&mut self, fen: String) {
-        let mut y = 0;
-        let mut x = 0;
+        let mut y = 7;
+        let mut x = 0 as usize;
 
         for c in fen.chars() {
             match c {
@@ -832,7 +832,7 @@ impl Board {
                     x += offset;
                 }
                 '/' => {
-                    y += 1;
+                    y -= 1;
                     x = 0;
                 }
                 'r' => {
