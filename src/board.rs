@@ -1,3 +1,8 @@
+use std::fmt;
+
+//BUG: chess board interpretation is currently wrong as it displays the pieces mirrored
+//FIX ASAP
+
 use iter_tools::Itertools;
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -38,6 +43,9 @@ enum MoveType {
     BishopMove,
     KnightMove,
     KingMove,
+
+    CastelKingSide,
+    CastelQueenSide,
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -105,9 +113,15 @@ impl SafeCoordinate {
     }
 }
 
-#[derive(Debug, Default, Hash, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Hash, Eq, PartialEq)]
 pub struct BitBoard {
     inner: u64,
+}
+
+impl From<u64> for BitBoard {
+    fn from(value: u64) -> Self {
+        BitBoard { inner: value }
+    }
 }
 
 impl BitBoard {
@@ -119,8 +133,15 @@ impl BitBoard {
         self.inner &= !(1u64 << (idx));
     }
 
-    pub fn _get_bit(&self, idx: usize) -> bool {
+    pub fn get_bit(&self, idx: usize) -> bool {
+        println!("{:#066b}", self.inner);
+
+        println!("{}", idx);
         (self.inner & (1u64 << (idx))) != 0
+    }
+
+    pub fn set(&mut self, value: u64) {
+        self.inner = value;
     }
 }
 
@@ -191,6 +212,9 @@ pub struct Board {
     black_control_bitboard: BitBoard,
     white_control_bitboard: BitBoard,
 
+    white_castling_right: BitBoard,
+    black_castling_right: BitBoard,
+
     /// Each cell holds a value which represents a piece
     board: [u16; 64],
 
@@ -227,6 +251,12 @@ impl Board {
 
             white_control_bitboard: BitBoard { inner: 0 },
             black_control_bitboard: BitBoard { inner: 0 },
+
+            // specified values for right and left rooks on each colour complex
+            white_castling_right: BitBoard { inner: 129 },
+            black_castling_right: BitBoard {
+                inner: 9295429630892703744,
+            },
         }
     }
 
@@ -238,6 +268,20 @@ impl Board {
             }
         }
         None
+    }
+
+    fn add_move(&mut self, mov: Move, color: &PieceColor) {
+        let bitboard = match color {
+            PieceColor::White => &mut self.white_control_bitboard,
+            PieceColor::Black => &mut self.black_control_bitboard,
+        };
+        // TODO: pawn promote
+        match mov.move_type {
+            MoveType::PawnPush | MoveType::PawnDoublePush | MoveType::KingMove => { /* Do nothing */
+            }
+            _ => bitboard.set_bit(mov.to),
+        }
+        self.current_moves.push(mov);
     }
 
     pub fn make_move(&mut self, from: usize, to: usize) -> bool {
@@ -294,6 +338,27 @@ impl Board {
                 }
                 self.move_piece(&mo);
             }
+            MoveType::CastelKingSide => {
+                assert!(
+                    target.get_type() == PieceType::Rook && target.get_color() == piece.get_color()
+                );
+                println!("Hello");
+
+                let new_king_position = if piece.get_color() == PieceColor::White {
+                    64
+                } else {
+                    4611686018427387968u64
+                };
+
+                let new_rook_position = if piece.get_color() == PieceColor::White {
+                    32
+                } else {
+                    2305843009213693952u64
+                };
+                self.get_bitboard_from_piece(piece).set(new_king_position);
+                self.get_bitboard_from_piece(target).set(new_rook_position);
+            }
+            MoveType::CastelQueenSide => todo!(),
             MoveType::None => todo!(),
         }
         self.move_history.push(mo);
@@ -301,6 +366,7 @@ impl Board {
     }
 
     fn promote_pawn(&mut self, piece_to: Piece, mo: &Move) {
+        //TODO:
         todo!("Not implemented");
     }
 
@@ -356,7 +422,10 @@ impl Board {
                     continue;
                 }
             };
-            self.current_moves.extend(moves);
+            for x in moves.iter() {
+                self.add_move(x.clone(), &turn);
+            }
+            // self.current_moves.extend(moves);
         }
     }
 
@@ -416,6 +485,32 @@ impl Board {
                 move_type: MoveType::KingMove,
             });
         }
+        let (queen_side_idx, king_side_idx, castling_bitboard) =
+            if piece.get_color() == PieceColor::White {
+                (0, 8, self.white_castling_right.clone())
+            } else {
+                (56, 63, self.black_castling_right.clone())
+            };
+
+        if castling_bitboard.get_bit(king_side_idx) {
+            //TODO: assert the king is at normal position
+            println!("Adding ck");
+            res.push(Move {
+                from: current_piece_idx,
+                to: current_piece_idx + 2,
+                move_type: MoveType::CastelKingSide,
+            });
+        }
+        if castling_bitboard.get_bit(queen_side_idx) {
+            //TODO: assert the king is at normal position
+            println!("Adding cq");
+            res.push(Move {
+                from: current_piece_idx,
+                to: current_piece_idx - 2,
+                move_type: MoveType::CastelQueenSide,
+            });
+        }
+
         res
     }
 
@@ -571,8 +666,8 @@ impl Board {
                     move_type: MoveType::PawnPush,
                 });
                 // checking for double push
-                if co.y == 6 && piece.piece_color == PieceColor::White {
-                    let double_front = self.get_square_isize(front_co.x, front_co.y - 1);
+                if co.y == 1 && piece.piece_color == PieceColor::White {
+                    let double_front = self.get_square_isize(front_co.x, front_co.y + 1);
                     let double_front_piece = self.get_piece_at_index(double_front);
                     if double_front_piece.get_type() == PieceType::None {
                         res.push(Move {
@@ -581,8 +676,8 @@ impl Board {
                             move_type: MoveType::PawnDoublePush,
                         });
                     }
-                } else if co.y == 1 && piece.piece_color == PieceColor::Black {
-                    let double_front = self.get_square_isize(front_co.x, front_co.y + 1);
+                } else if co.y == 6 && piece.piece_color == PieceColor::Black {
+                    let double_front = self.get_square_isize(front_co.x, front_co.y - 1);
                     let double_front_piece = self.get_piece_at_index(double_front);
                     if double_front_piece.get_type() == PieceType::None {
                         res.push(Move {
@@ -608,7 +703,6 @@ impl Board {
         res
     }
 
-    // TODO::
     fn enpassant_capture(&self, piece: Piece, current_cord: &SafeCoordinate) -> Option<Move> {
         // if the last move by the opponent was a double pawn push on either side of the current
         // pawn we can capture it en passant
@@ -757,6 +851,9 @@ impl Board {
         self.current_moves.iter().for_each(|m| {
             println!("{:?}", m);
         });
+
+        println!("White Capture : {:?}", self.white_control_bitboard.inner);
+        println!("Black Capture : {:?}", self.black_control_bitboard.inner);
     }
 
     /// Returns the current turn
