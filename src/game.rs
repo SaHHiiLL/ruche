@@ -13,6 +13,18 @@ impl PartialEq for Vector2 {
     }
 }
 
+trait ToVector2 {
+    fn to_vec2(&self) -> Vector2;
+}
+
+impl ToVector2 for usize {
+    fn to_vec2(&self) -> Vector2 {
+        let x: f32 = *self as f32 % 8.0;
+        let y: f32 = *self as f32 / 8.0;
+        Vector2 { x, y }
+    }
+}
+
 pub struct Game {
     _size: u32,
     x: u32,
@@ -99,6 +111,9 @@ impl Game {
         let selected_color =
             raylib::core::color::Color::from_hex("8ab7ff").expect("Error parsing hex");
 
+        let legal_color =
+            raylib::core::color::Color::from_hex("ff11ff").expect("Error parsing hex");
+
         let copy_arr = self.board.clone_board();
 
         for (idx, p) in copy_arr.iter().enumerate() {
@@ -141,6 +156,30 @@ impl Game {
                     self.cell_size as i32,
                     color,
                 );
+            }
+
+            if self.selected.is_some() {
+                println!("Checking");
+                let selected = self.selected.clone().unwrap();
+                let legal_moves = self.board.get_moves();
+                let legal_moves = legal_moves
+                    .iter()
+                    .filter(|m| {
+                        let l = m.to.to_vec2();
+                        l.x == selected.x && l.y == selected.y
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(legal_moves) = legal_moves.first() {
+                    println!("Foiund legal moves");
+                    let vec2 = legal_moves.to.to_vec2();
+                    d.draw_circle(
+                        vec2.x as i32,
+                        vec2.y as i32,
+                        (self.cell_size / 2) as f32,
+                        legal_color,
+                    );
+                }
             }
             self.draw_piece(d, idx, (*p).into());
         }

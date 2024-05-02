@@ -1,8 +1,5 @@
 use std::fmt;
 
-//BUG: chess board interpretation is currently wrong as it displays the pieces mirrored
-//FIX ASAP
-
 use iter_tools::Itertools;
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -24,9 +21,9 @@ pub enum PieceType {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Move {
-    from: usize,
-    to: usize,
-    move_type: MoveType,
+    pub from: usize,
+    pub to: usize,
+    pub move_type: MoveType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -134,9 +131,6 @@ impl BitBoard {
     }
 
     pub fn get_bit(&self, idx: usize) -> bool {
-        println!("{:#066b}", self.inner);
-
-        println!("{}", idx);
         (self.inner & (1u64 << (idx))) != 0
     }
 
@@ -258,6 +252,10 @@ impl Board {
                 inner: 9295429630892703744,
             },
         }
+    }
+
+    pub fn get_moves(&self) -> Vec<Move> {
+        self.current_moves.clone()
     }
 
     //TODO: add king checks
@@ -919,91 +917,75 @@ impl Board {
     /// board.load_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
     /// ```
     pub fn load_position(&mut self, fen: String) {
-        let mut y = 7;
-        let mut x = 0 as usize;
+        let mut idx: usize = 63;
 
         for c in fen.chars() {
             match c {
                 '1'..='8' => {
                     let offset = c.to_digit(10).unwrap() as usize;
-                    x += offset;
-                }
-                '/' => {
-                    y -= 1;
-                    x = 0;
+                    idx = idx.saturating_sub(offset);
                 }
                 'r' => {
-                    let idx = self.get_square(x, y);
                     self.black_rook_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Rook as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'n' => {
-                    let idx = self.get_square(x, y);
                     self.black_knight_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Knight as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'b' => {
-                    let idx = self.get_square(x, y);
                     self.black_bishop_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Bishop as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'q' => {
-                    let idx = self.get_square(x, y);
                     self.black_queen_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Queen as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'k' => {
-                    let idx = self.get_square(x, y);
                     self.black_king_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::King as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'p' => {
-                    let idx = self.get_square(x, y);
                     self.black_pawn_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::Black as u16 | PieceType::Pawn as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'R' => {
-                    let idx = self.get_square(x, y);
                     self.white_rook_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::Rook as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'N' => {
-                    let idx = self.get_square(x, y);
                     self.white_knight_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::Knight as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'B' => {
-                    let idx = self.get_square(x, y);
                     self.white_bishop_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::Bishop as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'Q' => {
-                    let idx = self.get_square(x, y);
                     self.white_queen_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::Queen as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'K' => {
-                    let idx = self.get_square(x, y);
                     self.white_king_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::King as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
                 'P' => {
-                    let idx = self.get_square(x, y);
                     self.white_pawn_bitboard.set_bit(idx);
                     self.board[idx] = PieceColor::White as u16 | PieceType::Pawn as u16;
-                    x += 1;
+                    idx = idx.saturating_sub(1);
                 }
+                '/' => {}
                 _ => {
                     tracing::error!("Invalid FEN character: {}", c);
                 }
