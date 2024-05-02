@@ -159,13 +159,13 @@ impl Game {
             }
 
             if self.selected.is_some() {
-                println!("Checking");
                 let selected = self.selected.clone().unwrap();
                 let legal_moves = self.board.get_moves();
                 let legal_moves = legal_moves
                     .iter()
                     .filter(|m| {
                         let l = m.to.to_vec2();
+                        println!("Chekcing");
                         l.x == selected.x && l.y == selected.y
                     })
                     .collect::<Vec<_>>();
