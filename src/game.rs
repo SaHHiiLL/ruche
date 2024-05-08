@@ -165,7 +165,6 @@ impl Game {
                     .iter()
                     .filter(|m| {
                         let l = m.to.to_vec2();
-                        println!("Chekcing");
                         l.x == selected.x && l.y == selected.y
                     })
                     .collect::<Vec<_>>();

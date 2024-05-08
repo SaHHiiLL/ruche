@@ -1,13 +1,15 @@
-use std::fmt;
+#![deny(missing_docs)]
 
 use iter_tools::Itertools;
 
+/// Represents the color of a given piece
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub enum PieceColor {
     White = 0,
     Black = 8,
 }
 
+/// Represents the type of a given piece
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub enum PieceType {
     Pawn = 1,
@@ -19,6 +21,8 @@ pub enum PieceType {
 
     None = -1,
 }
+
+/// Represents a move on a board from idex to idex with a movetype
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Move {
     pub from: usize,
@@ -26,8 +30,9 @@ pub struct Move {
     pub move_type: MoveType,
 }
 
+/// Represents different types of moves
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-enum MoveType {
+pub enum MoveType {
     #[default]
     None,
     PawnPush,
@@ -45,6 +50,13 @@ enum MoveType {
     CastelQueenSide,
 }
 
+/// Represents a single piece.
+///
+/// a 4bit integer is used to represent the piece
+///
+/// 0000
+///
+/// first bit is used as colour bit and last 3 bit is used as piece type bit
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub struct Piece {
     pub piece_color: PieceColor,
@@ -64,28 +76,34 @@ impl Piece {
     }
 }
 
+/// The direction a pawn is able to capture
 enum PawnCaptureDirection {
     Left,
     Right,
 }
 
 impl Piece {
+    /// Returns colors
     pub fn get_color(&self) -> PieceColor {
         self.piece_color
     }
 
+    /// Returns type
     pub fn get_type(&self) -> PieceType {
         self.piece_type
     }
 }
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
-/// Seess the board from whites perspective
-struct Coordinate {
+/// Coordinates of the board as x and y
+/// where (0, 0) -> h1 (aka idx 0)
+/// where (7, 7) -> a8 (aka idx 63)
+pub struct Coordinate {
     x: usize,
     y: usize,
 }
 
+/// Uses isize instea of usize to safely determine can an index be out of bounds or not
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 struct SafeCoordinate {
     x: isize,
@@ -93,6 +111,7 @@ struct SafeCoordinate {
 }
 
 impl SafeCoordinate {
+    // TODO: pawn promote
     fn new(x: isize, y: isize) -> Self {
         SafeCoordinate { x, y }
     }
@@ -101,6 +120,8 @@ impl SafeCoordinate {
         self.x < 0 || self.x > 7 || self.y < 0 || self.y > 7
     }
 
+    /// Convertes [SafeCoordinate] to [Coordinate]
+    /// will assert the inner `x` and `y` are in bounds see [SafeCoordinate::is_out_of_bounds]
     fn to_coordinate(&self) -> Coordinate {
         assert!(!self.is_out_of_bounds());
         Coordinate {
@@ -111,6 +132,7 @@ impl SafeCoordinate {
 }
 
 #[derive(Debug, Default, Clone, Hash, Eq, PartialEq)]
+/// a 64 bit integer matrix to represent the board
 pub struct BitBoard {
     inner: u64,
 }
@@ -122,25 +144,27 @@ impl From<u64> for BitBoard {
 }
 
 impl BitBoard {
+    /// Sets a bit to 1 at idx
     pub fn set_bit(&mut self, idx: usize) {
         self.inner |= 1u64 << (idx);
     }
 
+    /// Sets a bit to 0 at idx
     pub fn clear_bit(&mut self, idx: usize) {
         self.inner &= !(1u64 << (idx));
     }
 
+    /// Gets the bit at idx
     pub fn get_bit(&self, idx: usize) -> bool {
         (self.inner & (1u64 << (idx))) != 0
     }
 
+    /// Replaces the `inner` value to new `value`
     pub fn set(&mut self, value: u64) {
         self.inner = value;
     }
 }
 
-// size_t colormask = 0b1000;
-// size_t typemask =  0b0111;
 impl From<u16> for Piece {
     fn from(value: u16) -> Self {
         let color_mask: u16 = 0b1000;
@@ -168,26 +192,8 @@ impl From<u16> for Piece {
     }
 }
 
-// 63, 61, 62, 60, 59, 58, 57, 56
-// 55, 54, 53, 52, 51, 50, 49, 48
-// 47, 46, 45, 44, 43, 42, 41, 40
-// 39, 38, 37, 36, 35, 34, 33, 32
-// 31, 30, 29, 28, 27, 26, 25, 24
-// 23, 22, 21, 20, 19, 18, 17, 16
-// 15, 14, 13, 12, 11, 10, 9,  8
-// 7,  6,  5,  4,  3,  2,  1,  0
-//
-
-// 12, 10, 11, 13, 14, 11, 10, 12,
-// 9,  9,  9,  9,  9,  9,  9,  9,
-// 0,  0,  0,  0,  0,  0,  0,  0,
-// 0,  0,  0,  0,  0,  0,  0,  0,
-// 0,  0,  0,  1,  0,  0,  0,  0,
-// 0,  0,  0,  0,  0,  0,  0,  0,
-// 1,  1,  1,  0,  1,  1,  1,  1,
-// 4,  2,  3,  5,  6,  3,  2,  4
-//
 #[derive(Debug, Hash, Eq, PartialEq)]
+/// Board Representation
 pub struct Board {
     white_pawn_bitboard: BitBoard,
     white_rook_bitboard: BitBoard,
@@ -212,6 +218,7 @@ pub struct Board {
     /// Each cell holds a value which represents a piece
     board: [u16; 64],
 
+    /// Current avaliable moves
     current_moves: Vec<Move>,
     move_history: Vec<Move>,
 
@@ -268,12 +275,12 @@ impl Board {
         None
     }
 
+    /// Adds moves to `self.current_moves` whilest updating the white/black board control bitboard
     fn add_move(&mut self, mov: Move, color: &PieceColor) {
         let bitboard = match color {
             PieceColor::White => &mut self.white_control_bitboard,
             PieceColor::Black => &mut self.black_control_bitboard,
         };
-        // TODO: pawn promote
         match mov.move_type {
             MoveType::PawnPush | MoveType::PawnDoublePush | MoveType::KingMove => { /* Do nothing */
             }
@@ -298,6 +305,7 @@ impl Board {
 
         // if no move is available return
         let Some(mo) = self.is_move_avaliable(from, to) else {
+            tracing::warn!("Move Not avaliable");
             return false;
         };
 
@@ -337,10 +345,8 @@ impl Board {
                 self.move_piece(&mo);
             }
             MoveType::CastelKingSide => {
-                assert!(
-                    target.get_type() == PieceType::Rook && target.get_color() == piece.get_color()
-                );
-                println!("Hello");
+                assert!(target.get_type() == PieceType::None);
+                let target = self.get_piece_at_index(0);
 
                 let new_king_position = if piece.get_color() == PieceColor::White {
                     64
@@ -399,7 +405,7 @@ impl Board {
         let turn = self.get_turn();
 
         let board = self
-            .clone_board()
+            .board
             .iter()
             .map(|p| Piece::from(*p))
             .collect::<Vec<_>>();
@@ -483,32 +489,66 @@ impl Board {
                 move_type: MoveType::KingMove,
             });
         }
-        let (queen_side_idx, king_side_idx, castling_bitboard) =
-            if piece.get_color() == PieceColor::White {
-                (0, 8, self.white_castling_right.clone())
-            } else {
-                (56, 63, self.black_castling_right.clone())
-            };
+        // let (queen_side_idx, king_side_idx, castling_bitboard) =
+        //     if piece.get_color() == PieceColor::White {
+        //         (0, 8, self.white_castling_right.clone())
+        //     } else {
+        //         (56, 63, self.black_castling_right.clone())
+        //     };
+        //
+        // if castling_bitboard.get_bit(king_side_idx) {
+        //     res.push(Move {
+        //         from: current_piece_idx,
+        //         to: current_piece_idx + 2,
+        //         move_type: MoveType::CastelKingSide,
+        //     });
+        // }
+        // if castling_bitboard.get_bit(queen_side_idx) {
+        //     res.push(Move {
+        //         from: current_piece_idx,
+        //         to: current_piece_idx - 2,
+        //         move_type: MoveType::CastelQueenSide,
+        //     });
+        // }
+        //
 
-        if castling_bitboard.get_bit(king_side_idx) {
-            //TODO: assert the king is at normal position
-            println!("Adding ck");
-            res.push(Move {
-                from: current_piece_idx,
-                to: current_piece_idx + 2,
-                move_type: MoveType::CastelKingSide,
-            });
-        }
-        if castling_bitboard.get_bit(queen_side_idx) {
-            //TODO: assert the king is at normal position
-            println!("Adding cq");
-            res.push(Move {
-                from: current_piece_idx,
-                to: current_piece_idx - 2,
-                move_type: MoveType::CastelQueenSide,
-            });
-        }
+        // check if king is in normal position
 
+        let normal_king_position = if piece.get_color() == PieceColor::White {
+            3
+        } else {
+            59
+        };
+
+        if current_piece_idx == normal_king_position {
+            tracing::debug!("King in normal positon looking for castle");
+
+            // checking king side for white alone
+
+            // is path clear
+            let king_side_path_idx: [usize; 2] = [1, 2];
+            let mut all_clear = false;
+            for x in king_side_path_idx.iter() {
+                let piece = Piece::from(self.board[*x]);
+                if !piece.is_none() {
+                    all_clear = false;
+                    break;
+                } else {
+                    all_clear = true;
+                }
+            }
+
+            if all_clear {
+                tracing::debug!("We adding castleing");
+                let mov = Move {
+                    from: normal_king_position,
+                    //TODO: this don't work
+                    to: normal_king_position - 2,
+                    move_type: MoveType::CastelKingSide,
+                };
+                res.push(mov);
+            }
+        }
         res
     }
 
@@ -838,14 +878,22 @@ impl Board {
         println!("Black Bishop: {:?}", self.black_bishop_bitboard.inner);
         println!("Black Queen: {:?}", self.black_queen_bitboard.inner);
         println!("Black King: {:?}", self.black_king_bitboard.inner);
+        println!();
 
-        self.board.iter().chunks(8).into_iter().for_each(|c| {
-            for m in c {
-                print!("{:?},", m);
-            }
-            println!();
-        });
+        self.board
+            .iter()
+            .chunks(8)
+            .into_iter()
+            .enumerate()
+            .for_each(|(idx, c)| {
+                for (i, m) in c.enumerate() {
+                    let idx = (idx * 8) + i;
+                    print!("[{:0>2} {:0>2}] ", idx, m);
+                }
+                println!();
+            });
 
+        println!();
         self.current_moves.iter().for_each(|m| {
             println!("{:?}", m);
         });
