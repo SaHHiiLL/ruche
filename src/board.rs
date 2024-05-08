@@ -333,11 +333,34 @@ impl Board {
                 self.capture_piece(&mo);
                 self.move_piece(&mo);
             }
-            MoveType::QueenMove
-            | MoveType::KingMove
-            | MoveType::RookMove
-            | MoveType::BishopMove
-            | MoveType::KnightMove => {
+            MoveType::KingMove => {
+                // if the target square is not empty we need to capture the piece
+                if target.get_type() != PieceType::None {
+                    self.capture_piece(&mo);
+                }
+                self.move_piece(&mo);
+                // Setting casteling right for both side to none
+                if piece.get_color() == PieceColor::White {
+                    self.white_castling_right.set(0);
+                } else {
+                    self.black_castling_right.set(0);
+                }
+            }
+            MoveType::RookMove => {
+                // if the target square is not empty we need to capture the piece
+                if target.get_type() != PieceType::None {
+                    self.capture_piece(&mo);
+                }
+                self.move_piece(&mo);
+                // Setting casteling right for both side to none
+                if piece.get_color() == PieceColor::White {
+                    self.white_castling_right.clear_bit(from);
+                } else {
+                    self.black_castling_right.clear_bit(from);
+                }
+            }
+
+            MoveType::QueenMove | MoveType::BishopMove | MoveType::KnightMove => {
                 // if the target square is not empty we need to capture the piece
                 if target.get_type() != PieceType::None {
                     self.capture_piece(&mo);
@@ -346,21 +369,27 @@ impl Board {
             }
             MoveType::CastelKingSide => {
                 assert!(target.get_type() == PieceType::None);
-                let target = self.get_piece_at_index(0);
-
-                let new_king_position = if piece.get_color() == PieceColor::White {
-                    64
+                assert!(piece.get_type() == PieceType::King);
+                self.move_piece(&mo);
+                let (rook_pos, new_rook_pos) = if piece.get_color() == PieceColor::White {
+                    (0, to + 1)
                 } else {
-                    4611686018427387968u64
+                    (56, to + 1)
                 };
 
-                let new_rook_position = if piece.get_color() == PieceColor::White {
-                    32
-                } else {
-                    2305843009213693952u64
+                let rook_mov = Move {
+                    from: rook_pos,
+                    to: new_rook_pos,
+                    move_type: MoveType::None,
                 };
-                self.get_bitboard_from_piece(piece).set(new_king_position);
-                self.get_bitboard_from_piece(target).set(new_rook_position);
+                self.move_piece(&rook_mov);
+
+                // Setting casteling right for both side to none
+                if piece.get_color() == PieceColor::White {
+                    self.white_castling_right.set(0);
+                } else {
+                    self.black_castling_right.set(0);
+                }
             }
             MoveType::CastelQueenSide => todo!(),
             MoveType::None => todo!(),
