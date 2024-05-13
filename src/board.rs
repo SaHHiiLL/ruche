@@ -1,5 +1,7 @@
 #![deny(missing_docs)]
 
+use std::ops::Not;
+
 use iter_tools::Itertools;
 
 /// Represents the color of a given piece
@@ -281,6 +283,8 @@ impl Board {
             PieceColor::White => &mut self.white_control_bitboard,
             PieceColor::Black => &mut self.black_control_bitboard,
         };
+        // updating the control bit board, as king and pawn pushes cannot be used to check the
+        // opponent, we can simply ignore them
         match mov.move_type {
             MoveType::PawnPush | MoveType::PawnDoublePush | MoveType::KingMove => { /* Do nothing */
             }
@@ -572,10 +576,14 @@ impl Board {
         };
 
         /// checks if the path to the finish line has no piece
-        fn all_clear(path: &[usize], board: &[u16; 64]) -> bool {
+        fn all_clear(
+            path: &[usize],
+            board: &[u16; 64],
+            opponent_control_bitboard: &BitBoard,
+        ) -> bool {
             for x in path.iter() {
                 let piece = Piece::from(board[*x]);
-                if !piece.is_none() {
+                if !piece.is_none() || opponent_control_bitboard.get_bit(*x) {
                     return false;
                 }
             }
@@ -583,7 +591,7 @@ impl Board {
             true
         }
 
-        let (rook, h_file_idx, a_file_idx) = if self.is_white_turn {
+        let (rook, h_file_idx, a_file_idx, opp_control_bitboard) = if self.is_white_turn {
             (
                 Piece {
                     piece_color: PieceColor::White,
@@ -591,6 +599,7 @@ impl Board {
                 },
                 0,
                 7,
+                &self.black_control_bitboard,
             )
         } else {
             (
@@ -600,11 +609,12 @@ impl Board {
                 },
                 56,
                 63,
+                &self.white_control_bitboard,
             )
         };
 
         if self.get_piece_at_index(h_file_idx) == rook
-            && all_clear(&king_side_path_idx, &self.board)
+            && all_clear(&king_side_path_idx, &self.board, opp_control_bitboard)
         {
             tracing::debug!("We adding castleing");
             let mov = Move {
@@ -616,7 +626,7 @@ impl Board {
         }
 
         if self.get_piece_at_index(a_file_idx) == rook
-            && all_clear(&queen_side_path_idx, &self.board)
+            && all_clear(&queen_side_path_idx, &self.board, opp_control_bitboard)
         {
             tracing::debug!("We queen side castleing");
             let mov = Move {
@@ -1119,6 +1129,12 @@ impl Board {
         }
 
         println!("{:?}", self.board);
+        self.generate_moves_current_position();
+
+        self.is_white_turn = self.is_white_turn.not();
+        self.generate_moves_current_position();
+
+        self.is_white_turn = self.is_white_turn.not();
         self.generate_moves_current_position();
     }
 }
