@@ -1129,7 +1129,6 @@ impl Board {
         }
 
         println!("{:?}", self.board);
-        self.generate_moves_current_position();
 
         self.is_white_turn = self.is_white_turn.not();
         self.generate_moves_current_position();
