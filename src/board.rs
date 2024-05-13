@@ -391,7 +391,29 @@ impl Board {
                     self.black_castling_right.set(0);
                 }
             }
-            MoveType::CastelQueenSide => todo!(),
+            MoveType::CastelQueenSide => {
+                assert!(target.get_type() == PieceType::None);
+                assert!(piece.get_type() == PieceType::King);
+                self.move_piece(&mo);
+                let (rook_pos, new_rook_pos) = if piece.get_color() == PieceColor::White {
+                    (7, to - 1)
+                } else {
+                    (63, to - 1)
+                };
+                let rook_mov = Move {
+                    from: rook_pos,
+                    to: new_rook_pos,
+                    move_type: MoveType::None,
+                };
+                self.move_piece(&rook_mov);
+
+                // Setting casteling right for both side to none
+                if piece.get_color() == PieceColor::White {
+                    self.white_castling_right.set(0);
+                } else {
+                    self.black_castling_right.set(0);
+                }
+            }
             MoveType::None => todo!(),
         }
         self.move_history.push(mo);
@@ -518,66 +540,93 @@ impl Board {
                 move_type: MoveType::KingMove,
             });
         }
-        // let (queen_side_idx, king_side_idx, castling_bitboard) =
-        //     if piece.get_color() == PieceColor::White {
-        //         (0, 8, self.white_castling_right.clone())
-        //     } else {
-        //         (56, 63, self.black_castling_right.clone())
-        //     };
-        //
-        // if castling_bitboard.get_bit(king_side_idx) {
-        //     res.push(Move {
-        //         from: current_piece_idx,
-        //         to: current_piece_idx + 2,
-        //         move_type: MoveType::CastelKingSide,
-        //     });
-        // }
-        // if castling_bitboard.get_bit(queen_side_idx) {
-        //     res.push(Move {
-        //         from: current_piece_idx,
-        //         to: current_piece_idx - 2,
-        //         move_type: MoveType::CastelQueenSide,
-        //     });
-        // }
-        //
 
-        // check if king is in normal position
+        res.extend(self.generate_king_castle_moves(current_piece_idx, piece));
 
-        let normal_king_position = if piece.get_color() == PieceColor::White {
+        res
+    }
+
+    /// Generates king moves for both sides,
+    /// NOTE: without regards to checks
+    fn generate_king_castle_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
+        let mut res = vec![];
+        let expected_king_pos = if piece.get_color() == PieceColor::White {
             3
         } else {
             59
         };
 
-        if current_piece_idx == normal_king_position {
-            tracing::debug!("King in normal positon looking for castle");
+        // Return early if king is not at the correct position to castle
+        if current_piece_idx != expected_king_pos {
+            return res;
+        }
+        let king_side_path_idx: [usize; 2] = if piece.get_color() == PieceColor::White {
+            [1, 2]
+        } else {
+            [56, 57]
+        };
+        let queen_side_path_idx: [usize; 3] = if piece.get_color() == PieceColor::White {
+            [4, 5, 6]
+        } else {
+            [60, 61, 62]
+        };
 
-            // checking king side for white alone
-
-            // is path clear
-            let king_side_path_idx: [usize; 2] = [1, 2];
-            let mut all_clear = false;
-            for x in king_side_path_idx.iter() {
-                let piece = Piece::from(self.board[*x]);
+        /// checks if the path to the finish line has no piece
+        fn all_clear(path: &[usize], board: &[u16; 64]) -> bool {
+            for x in path.iter() {
+                let piece = Piece::from(board[*x]);
                 if !piece.is_none() {
-                    all_clear = false;
-                    break;
-                } else {
-                    all_clear = true;
+                    return false;
                 }
             }
-
-            if all_clear {
-                tracing::debug!("We adding castleing");
-                let mov = Move {
-                    from: normal_king_position,
-                    //TODO: this don't work
-                    to: normal_king_position - 2,
-                    move_type: MoveType::CastelKingSide,
-                };
-                res.push(mov);
-            }
+            tracing::debug!("All clear for this side {:?}", path);
+            true
         }
+
+        let (rook, h_file_idx, a_file_idx) = if self.is_white_turn {
+            (
+                Piece {
+                    piece_color: PieceColor::White,
+                    piece_type: PieceType::Rook,
+                },
+                0,
+                7,
+            )
+        } else {
+            (
+                Piece {
+                    piece_color: PieceColor::Black,
+                    piece_type: PieceType::Rook,
+                },
+                56,
+                63,
+            )
+        };
+
+        if self.get_piece_at_index(h_file_idx) == rook
+            && all_clear(&king_side_path_idx, &self.board)
+        {
+            tracing::debug!("We adding castleing");
+            let mov = Move {
+                from: expected_king_pos,
+                to: expected_king_pos - 2,
+                move_type: MoveType::CastelKingSide,
+            };
+            res.push(mov);
+        }
+
+        if self.get_piece_at_index(a_file_idx) == rook
+            && all_clear(&queen_side_path_idx, &self.board)
+        {
+            tracing::debug!("We queen side castleing");
+            let mov = Move {
+                from: expected_king_pos,
+                to: expected_king_pos + 2,
+                move_type: MoveType::CastelQueenSide,
+            };
+            res.push(mov);
+        }
+
         res
     }
 

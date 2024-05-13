@@ -20,7 +20,8 @@ fn main() {
 
     let mut game = game::Game::new(500, 0, 100);
     game.load_images();
-    game.board.load_position("4k3/8/8/8/8/8/8/4K2R".to_string());
+    game.board
+        .load_position("r3k2r/8/3Q4/8/8/5q2/8/R3K2R".to_string());
 
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);
