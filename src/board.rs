@@ -37,9 +37,13 @@ pub struct Move {
 pub enum MoveType {
     #[default]
     None,
-    PawnPush,
+    PawnPush {
+        promotion_piece: Option<PieceType>,
+    },
     PawnDoublePush,
-    PawnCapture,               // When a pawn captures a piece
+    PawnCapture {
+        promotion_piece: Option<PieceType>,
+    }, // When a pawn captures a piece
     PawnEnPassant(Coordinate), // When a pawn captures a piece en passant
 
     QueenMove,
@@ -278,7 +282,7 @@ impl Board {
     }
 
     /// Adds moves to `self.current_moves` whilest updating the white/black board control bitboard
-    fn add_move(&mut self, mov: Move, color: &PieceColor) {
+    fn update_color_control_square(&mut self, mov: Move, color: &PieceColor) {
         let bitboard = match color {
             PieceColor::White => &mut self.white_control_bitboard,
             PieceColor::Black => &mut self.black_control_bitboard,
@@ -286,7 +290,7 @@ impl Board {
         // updating the control bit board, as king and pawn pushes cannot be used to check the
         // opponent, we can simply ignore them
         match mov.move_type {
-            MoveType::PawnPush | MoveType::PawnDoublePush | MoveType::KingMove => { /* Do nothing */
+            MoveType::PawnPush { .. } | MoveType::PawnDoublePush | MoveType::KingMove => { /* Do nothing */
             }
             _ => bitboard.set_bit(mov.to),
         }
@@ -317,9 +321,13 @@ impl Board {
         assert!(mo.to == to);
 
         match mo.move_type {
-            MoveType::PawnPush | MoveType::PawnDoublePush => {
-                // if the move is a pawn push or double push
-                // we need to update the bitboard
+            MoveType::PawnDoublePush => {
+                self.move_piece(&mo);
+            }
+            MoveType::PawnPush { promotion_piece } => {
+                if let Some(promoting_to) = promotion_piece {
+                    self.promote_pawn(&mo, promoting_to);
+                }
                 self.move_piece(&mo);
             }
             MoveType::PawnEnPassant(capture_piece) => {
@@ -333,7 +341,10 @@ impl Board {
                 self.board[pawn_to_capture_idx] = 0;
                 self.move_piece(&mo);
             }
-            MoveType::PawnCapture => {
+            MoveType::PawnCapture { promotion_piece } => {
+                if let Some(promoting_to) = promotion_piece {
+                    self.promote_pawn(&mo, promoting_to);
+                }
                 self.capture_piece(&mo);
                 self.move_piece(&mo);
             }
@@ -424,9 +435,16 @@ impl Board {
         true
     }
 
-    fn promote_pawn(&mut self, piece_to: Piece, mo: &Move) {
-        //TODO:
-        todo!("Not implemented");
+    fn promote_pawn(&mut self, mo: &Move, promoting_to: PieceType) {
+        if !matches!(
+            promoting_to,
+            PieceType::Queen | PieceType::Bishop | PieceType::Knight | PieceType::Rook
+        ) {
+            tracing::error!("Invalid Piece to promote");
+            tracing::error!("PieceType: {:?}", promoting_to);
+            tracing::error!("Move: {:?}", mo);
+            panic!("Invalid Piece Type for promotion");
+        }
     }
 
     /// Only moves the piece on the board
@@ -482,7 +500,7 @@ impl Board {
                 }
             };
             for x in moves.iter() {
-                self.add_move(x.clone(), &turn);
+                self.update_color_control_square(x.clone(), &turn);
             }
             // self.current_moves.extend(moves);
         }
@@ -616,7 +634,6 @@ impl Board {
         if self.get_piece_at_index(h_file_idx) == rook
             && all_clear(&king_side_path_idx, &self.board, opp_control_bitboard)
         {
-            tracing::debug!("We adding castleing");
             let mov = Move {
                 from: expected_king_pos,
                 to: expected_king_pos - 2,
@@ -628,7 +645,6 @@ impl Board {
         if self.get_piece_at_index(a_file_idx) == rook
             && all_clear(&queen_side_path_idx, &self.board, opp_control_bitboard)
         {
-            tracing::debug!("We queen side castleing");
             let mov = Move {
                 from: expected_king_pos,
                 to: expected_king_pos + 2,
@@ -789,7 +805,9 @@ impl Board {
                 res.push(Move {
                     from: current_piece_idx,
                     to: front,
-                    move_type: MoveType::PawnPush,
+                    move_type: MoveType::PawnPush {
+                        promotion_piece: None,
+                    },
                 });
                 // checking for double push
                 if co.y == 1 && piece.piece_color == PieceColor::White {
@@ -928,7 +946,9 @@ impl Board {
         let mov = Move {
             from: self.get_index_from_coordinates(current_cord.to_coordinate()),
             to: right,
-            move_type: MoveType::PawnCapture,
+            move_type: MoveType::PawnCapture {
+                promotion_piece: None,
+            },
         };
         Some(mov)
     }

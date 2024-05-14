@@ -267,8 +267,7 @@ impl Game {
         ];
 
         for piece in pieces.iter() {
-            self.image_map
-                .insert(piece.clone(), self.get_texture(piece));
+            self.image_map.insert(*piece, self.get_texture(piece));
         }
     }
 
