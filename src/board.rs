@@ -169,6 +169,10 @@ impl BitBoard {
     pub fn set(&mut self, value: u64) {
         self.inner = value;
     }
+
+    pub fn zero(&mut self) {
+        self.inner = 0;
+    }
 }
 
 impl From<u16> for Piece {
@@ -200,6 +204,8 @@ impl From<u16> for Piece {
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 /// Board Representation
+///
+/// TODO: make moves for both colour
 pub struct Board {
     white_pawn_bitboard: BitBoard,
     white_rook_bitboard: BitBoard,
@@ -226,7 +232,11 @@ pub struct Board {
 
     /// Current avaliable moves
     current_moves: Vec<Move>,
+
     move_history: Vec<Move>,
+
+    white_current_moves: Vec<Move>,
+    black_current_moves: Vec<Move>,
 
     /// The current turn
     is_white_turn: bool,
@@ -241,6 +251,10 @@ impl Board {
             board: [0; 64],
             is_white_turn: true,
             current_moves: Vec::new(),
+
+            white_current_moves: Vec::new(),
+            black_current_moves: Vec::new(),
+
             move_history: Vec::new(),
             white_pawn_bitboard: BitBoard { inner: 0 },
             white_rook_bitboard: BitBoard { inner: 0 },
@@ -268,12 +282,20 @@ impl Board {
     }
 
     pub fn get_moves(&self) -> Vec<Move> {
-        self.current_moves.clone()
+        self.all_moves()
+    }
+
+    fn get_moves_for_turn(&self) -> &[Move] {
+        if self.is_white_turn {
+            &self.white_current_moves
+        } else {
+            &self.black_current_moves
+        }
     }
 
     //TODO: add king checks
     fn is_move_avaliable(&self, from: usize, to: usize) -> Option<Move> {
-        for m in self.current_moves.iter() {
+        for m in self.get_moves_for_turn().iter() {
             if m.from == from && m.to == to {
                 return Some(m.clone());
             }
@@ -282,7 +304,7 @@ impl Board {
     }
 
     /// Adds moves to `self.current_moves` whilest updating the white/black board control bitboard
-    fn update_color_control_square(&mut self, mov: Move, color: &PieceColor) {
+    fn update_color_control_square_for_move(&mut self, mov: Move, color: &PieceColor) {
         let bitboard = match color {
             PieceColor::White => &mut self.white_control_bitboard,
             PieceColor::Black => &mut self.black_control_bitboard,
@@ -294,7 +316,6 @@ impl Board {
             }
             _ => bitboard.set_bit(mov.to),
         }
-        self.current_moves.push(mov);
     }
 
     pub fn make_move(&mut self, from: usize, to: usize) -> bool {
@@ -341,6 +362,7 @@ impl Board {
                 self.board[pawn_to_capture_idx] = 0;
                 self.move_piece(&mo);
             }
+            MoveType::None => todo!(),
             MoveType::PawnCapture { promotion_piece } => {
                 if let Some(promoting_to) = promotion_piece {
                     self.promote_pawn(&mo, promoting_to);
@@ -432,6 +454,7 @@ impl Board {
             MoveType::None => todo!(),
         }
         self.move_history.push(mo);
+
         true
     }
 
@@ -470,11 +493,18 @@ impl Board {
         self.board[current_move.to] = 0;
     }
 
+    fn clear_moves(&mut self) {
+        self.white_current_moves.clear();
+        self.black_current_moves.clear();
+    }
+
     /// Clears the moves list and generates all possible moves for the current position
     /// This function should be called after each move
     pub fn generate_moves_current_position(&mut self) {
-        self.current_moves.clear();
-        assert!(self.current_moves.is_empty());
+        self.clear_moves();
+        assert!(self.white_current_moves.is_empty());
+        assert!(self.black_current_moves.is_empty());
+
         let turn = self.get_turn();
 
         let board = self
@@ -485,9 +515,9 @@ impl Board {
 
         // Filters over the current turn pieces and generates all possible moves
         for (i, piece) in board.iter().enumerate() {
-            if piece.get_color() != turn {
-                continue;
-            }
+            // if piece.get_color() != turn {
+            //     continue;
+            // }
             let moves = match piece.piece_type {
                 PieceType::Pawn => self.generate_pawn_moves(i, *piece),
                 PieceType::Rook => self.generate_rook_moves(i, *piece),
@@ -499,11 +529,27 @@ impl Board {
                     continue;
                 }
             };
-            for x in moves.iter() {
-                self.update_color_control_square(x.clone(), &turn);
+
+            match piece.get_color() {
+                PieceColor::White => self.white_current_moves.extend(moves),
+                PieceColor::Black => self.black_current_moves.extend(moves),
             }
-            // self.current_moves.extend(moves);
         }
+        self.white_control_bitboard.zero();
+        self.black_control_bitboard.zero();
+
+        for x in self.all_moves().iter() {
+            self.update_color_control_square_for_move(x.clone(), &turn);
+        }
+    }
+
+    fn all_moves(&self) -> Vec<Move> {
+        [
+            self.white_current_moves.clone(),
+            self.black_current_moves.clone(),
+        ]
+        .concat()
+        .to_vec()
     }
 
     fn generate_queen_moves(&mut self, current_piece_idx: usize, piece: Piece) -> Vec<Move> {
@@ -602,6 +648,7 @@ impl Board {
             for x in path.iter() {
                 let piece = Piece::from(board[*x]);
                 if !piece.is_none() || opponent_control_bitboard.get_bit(*x) {
+                    tracing::debug!("Not Clear{:?}", path);
                     return false;
                 }
             }
@@ -738,11 +785,23 @@ impl Board {
 
                 let current_look_up_piece = self.get_piece_at_index_from_cord(&cluc);
 
-                if !current_look_up_piece.is_none()
-                    && current_look_up_piece.get_color() == piece.get_color()
-                {
-                    break 'beyond;
+                if !current_look_up_piece.is_none() {
+                    // fiendly piece cannot attack nor move, abandon the search for this
+                    // direction
+                    if current_look_up_piece.get_color() == piece.get_color() {
+                        break 'beyond;
+                    } else {
+                        // enemy piece add it and move to the next direction - we exit afterwards
+                        let mov = Move {
+                            from: current_piece_idx,
+                            to: self.get_index_from_coordinates(cluc),
+                            move_type,
+                        };
+                        res.push(mov);
+                        break 'beyond;
+                    }
                 }
+
                 let mov = Move {
                     from: current_piece_idx,
                     to: self.get_index_from_coordinates(cluc),
@@ -899,7 +958,6 @@ impl Board {
                     to: self.get_index_from_coordinates(end_pos),
                     move_type: MoveType::PawnEnPassant(last_move_cord),
                 };
-
                 return Some(mov);
             }
         }
@@ -1002,12 +1060,9 @@ impl Board {
             });
 
         println!();
-        self.current_moves.iter().for_each(|m| {
-            println!("{:?}", m);
-        });
 
-        println!("White Capture : {:?}", self.white_control_bitboard.inner);
-        println!("Black Capture : {:?}", self.black_control_bitboard.inner);
+        println!("White control: {:?}", self.white_control_bitboard.inner);
+        println!("Black control: {:?}", self.black_control_bitboard.inner);
     }
 
     /// Returns the current turn

@@ -1,4 +1,4 @@
-use crate::board::{self, Piece, PieceColor, PieceType};
+use crate::board::{self, Move, Piece, PieceColor, PieceType};
 use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Clone, Default)]
@@ -9,7 +9,7 @@ pub struct Vector2 {
 
 impl PartialEq for Vector2 {
     fn eq(&self, other: &Self) -> bool {
-        self.x == other.x && self.y == other.y
+        self.x.floor() == other.x.floor() && self.y.floor() == other.y.floor()
     }
 }
 
@@ -19,16 +19,17 @@ trait ToVector2 {
 
 impl ToVector2 for usize {
     fn to_vec2(&self) -> Vector2 {
-        let x: f32 = *self as f32 % 8.0;
-        let y: f32 = *self as f32 / 8.0;
+        let x: f32 = (*self as f32 % 8.0).floor();
+        let y: f32 = (*self as f32 / 8.0).floor();
+
         Vector2 { x, y }
     }
 }
 
 pub struct Game {
     _size: u32,
-    x: u32,
-    y: u32,
+    x_offset: u32,
+    y_offset: u32,
     cell_size: u32,
     pub board: board::Board,
 
@@ -41,8 +42,8 @@ impl Game {
     pub fn new(_size: u32, x: u32, y: u32) -> Self {
         Self {
             _size,
-            x,
-            y,
+            x_offset: x,
+            y_offset: y,
             cell_size: _size / 8,
             board: board::Board::new(),
 
@@ -70,8 +71,8 @@ impl Game {
 
         d.draw_texture(
             texture,
-            (x as u32 * self.cell_size + self.x) as i32,
-            (y as u32 * self.cell_size + self.y) as i32,
+            (x as u32 * self.cell_size + self.x_offset) as i32,
+            (y as u32 * self.cell_size + self.y_offset) as i32,
             raylib::core::color::Color::WHITE,
         );
     }
@@ -123,8 +124,8 @@ impl Game {
 
             if self.cursor.x as usize == x as usize && self.cursor.y as usize == y as usize {
                 d.draw_rectangle(
-                    (self.x + x as u32 * self.cell_size) as i32,
-                    (self.y + y as u32 * self.cell_size) as i32,
+                    (self.x_offset + x as u32 * self.cell_size) as i32,
+                    (self.y_offset + y as u32 * self.cell_size) as i32,
                     self.cell_size as i32,
                     self.cell_size as i32,
                     cursor_color,
@@ -133,61 +134,79 @@ impl Game {
                 let selected = self.selected.clone().unwrap();
                 if selected.x as usize == x as usize && selected.y as usize == y as usize {
                     d.draw_rectangle(
-                        (self.x + x as u32 * self.cell_size) as i32,
-                        (self.y + y as u32 * self.cell_size) as i32,
+                        (self.x_offset + x as u32 * self.cell_size) as i32,
+                        (self.y_offset + y as u32 * self.cell_size) as i32,
                         self.cell_size as i32,
                         self.cell_size as i32,
                         selected_color,
                     );
                 } else {
                     d.draw_rectangle(
-                        (self.x + x as u32 * self.cell_size) as i32,
-                        (self.y + y as u32 * self.cell_size) as i32,
+                        (self.x_offset + x as u32 * self.cell_size) as i32,
+                        (self.y_offset + y as u32 * self.cell_size) as i32,
                         self.cell_size as i32,
                         self.cell_size as i32,
                         color,
                     );
                 }
+
+                if let Some(selected) = &self.selected {
+                    let moves = self.board.get_moves();
+                    let moves = moves
+                        .iter()
+                        .filter(|x| {
+                            let init = x.from.to_vec2();
+                            return init.eq(&selected);
+                        })
+                        .collect::<Vec<_>>();
+
+                    let moves = moves
+                        .iter()
+                        .map(|f| f.to.to_vec2())
+                        .find(|v| v.x.floor() as usize == x && v.y.floor() as usize == y);
+
+                    if let Some(found) = moves {
+                        d.draw_rectangle(
+                            (self.x_offset as u32 + found.x as u32 * self.cell_size) as i32,
+                            (self.y_offset as u32 + found.y as u32 * self.cell_size) as i32,
+                            self.cell_size as i32,
+                            self.cell_size as i32,
+                            legal_color,
+                        );
+                    }
+
+                    // if let Some(first) = moves.clone().iter().next() {
+                    //     let first = first.to.to_vec2();
+                    //     let first = dbg!(first);
+                    //     if first.x as usize == x && first.y as usize == y {
+                    //         d.draw_rectangle(
+                    //             (first.x as u32 + x as u32 * self.cell_size) as i32,
+                    //             (first.y as u32 + y as u32 * self.cell_size) as i32,
+                    //             self.cell_size as i32,
+                    //             self.cell_size as i32,
+                    //             legal_color,
+                    //         );
+                    //     }
+                    // }
+                }
             } else {
                 d.draw_rectangle(
-                    (self.x + x as u32 * self.cell_size) as i32,
-                    (self.y + y as u32 * self.cell_size) as i32,
+                    (self.x_offset + x as u32 * self.cell_size) as i32,
+                    (self.y_offset + y as u32 * self.cell_size) as i32,
                     self.cell_size as i32,
                     self.cell_size as i32,
                     color,
                 );
             }
 
-            if self.selected.is_some() {
-                let selected = self.selected.clone().unwrap();
-                let legal_moves = self.board.get_moves();
-                let legal_moves = legal_moves
-                    .iter()
-                    .filter(|m| {
-                        let l = m.to.to_vec2();
-                        l.x == selected.x && l.y == selected.y
-                    })
-                    .collect::<Vec<_>>();
-
-                if let Some(legal_moves) = legal_moves.first() {
-                    println!("Foiund legal moves");
-                    let vec2 = legal_moves.to.to_vec2();
-                    d.draw_circle(
-                        vec2.x as i32,
-                        vec2.y as i32,
-                        (self.cell_size / 2) as f32,
-                        legal_color,
-                    );
-                }
-            }
             self.draw_piece(d, idx, (*p).into());
         }
     }
 
     pub fn follow_mouse(&mut self, d: &raylib::core::RaylibHandle) {
         let mouse = d.get_mouse_position();
-        self.cursor.x = (mouse.x - self.x as f32) / self.cell_size as f32;
-        self.cursor.y = (mouse.y - self.y as f32) / self.cell_size as f32;
+        self.cursor.x = (mouse.x - self.x_offset as f32) / self.cell_size as f32;
+        self.cursor.y = (mouse.y - self.y_offset as f32) / self.cell_size as f32;
     }
 
     pub fn select_piece(&mut self, d: &raylib::core::RaylibHandle) {
