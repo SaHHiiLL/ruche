@@ -21,7 +21,7 @@ fn main() {
     let mut game = game::Game::new(500, 0, 100);
     game.load_images();
     game.board
-        .load_position("r3k2r/8/314/8/8/512/8/R3K2R".to_string());
+        .load_position("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1".to_string());
 
     while !rl.window_should_close() {
         let mut d = rl.begin_drawing(&thread);

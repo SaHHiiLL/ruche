@@ -4,6 +4,10 @@ use std::ops::Not;
 
 use iter_tools::Itertools;
 
+//TODO:
+// - BUG: for some reason the queen bitboard is incorrect after the promotion only -- correct
+// beforehand
+
 /// Represents the color of a given piece
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub enum PieceColor {
@@ -75,6 +79,24 @@ impl Piece {
             piece_color,
             piece_type,
         }
+    }
+
+    /// creates a new none type of piece
+    pub fn new_none() -> Self {
+        Piece {
+            piece_type: PieceType::None,
+            piece_color: PieceColor::White,
+        }
+    }
+
+    /// sets the type of the piece
+    fn set_type(&mut self, piece_type: PieceType) {
+        self.piece_type = piece_type;
+    }
+
+    /// sets the color of the piece
+    fn set_color(&mut self, piece_color: PieceColor) {
+        self.piece_color = piece_color;
     }
 
     pub fn is_none(&self) -> bool {
@@ -170,8 +192,15 @@ impl BitBoard {
         self.inner = value;
     }
 
+    /// Sets bitboard to Zero
     pub fn zero(&mut self) {
         self.inner = 0;
+    }
+}
+
+impl From<Piece> for u16 {
+    fn from(value: Piece) -> Self {
+        value.get_type() as u16 | value.get_color() as u16
     }
 }
 
@@ -204,8 +233,6 @@ impl From<u16> for Piece {
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 /// Board Representation
-///
-/// TODO: make moves for both colour
 pub struct Board {
     white_pawn_bitboard: BitBoard,
     white_rook_bitboard: BitBoard,
@@ -348,8 +375,9 @@ impl Board {
             MoveType::PawnPush { promotion_piece } => {
                 if let Some(promoting_to) = promotion_piece {
                     self.promote_pawn(&mo, promoting_to);
+                } else {
+                    self.move_piece(&mo);
                 }
-                self.move_piece(&mo);
             }
             MoveType::PawnEnPassant(capture_piece) => {
                 let pawn_to_capture_idx = self.get_square(capture_piece.x, capture_piece.y);
@@ -366,9 +394,10 @@ impl Board {
             MoveType::PawnCapture { promotion_piece } => {
                 if let Some(promoting_to) = promotion_piece {
                     self.promote_pawn(&mo, promoting_to);
+                } else {
+                    self.capture_piece(&mo);
+                    self.move_piece(&mo);
                 }
-                self.capture_piece(&mo);
-                self.move_piece(&mo);
             }
             MoveType::KingMove => {
                 // if the target square is not empty we need to capture the piece
@@ -459,6 +488,7 @@ impl Board {
     }
 
     fn promote_pawn(&mut self, mo: &Move, promoting_to: PieceType) {
+        println!("Promotion");
         if !matches!(
             promoting_to,
             PieceType::Queen | PieceType::Bishop | PieceType::Knight | PieceType::Rook
@@ -467,6 +497,43 @@ impl Board {
             tracing::error!("PieceType: {:?}", promoting_to);
             tracing::error!("Move: {:?}", mo);
             panic!("Invalid Piece Type for promotion");
+        }
+
+        let (last_rank, second_last_rank) = if self.get_turn() == PieceColor::White {
+            (7, 6)
+        } else {
+            (0, 1)
+        };
+
+        // need to convert them to x and y from a single coordinate
+        // assert!(mo.to == last_rank);
+        // assert!(mo.to == 0);
+        // assert!(mo.from == second_last_rank);
+        //
+        let mut promoted_piece = Piece::new_none();
+
+        match promoting_to {
+            PieceType::Queen | PieceType::Bishop | PieceType::Knight | PieceType::Rook => {
+                let pawn_promoting = self.get_piece_at_index(mo.from);
+                assert!(pawn_promoting.get_type() == PieceType::Pawn);
+                //1: remove the pawn from the bitboard
+                //2: add the new_promoted piece to the new bitboard
+                //3: update the board array
+
+                let pawn_bitboard = self.get_bitboard_from_piece(pawn_promoting);
+                // setting the idx to 0
+                pawn_bitboard.clear_bit(mo.from);
+                self.board[mo.from] = 0;
+
+                // build the new piece
+                promoted_piece.set_type(promoting_to);
+                promoted_piece.set_color(self.get_turn());
+
+                let new_piece_bitboard = self.get_bitboard_from_piece(promoted_piece);
+                new_piece_bitboard.set(mo.to as u64);
+                self.board[mo.to] = promoted_piece.into();
+            }
+            _ => panic!("Invalid Piece Type for promotion"),
         }
     }
 
@@ -538,8 +605,16 @@ impl Board {
         self.white_control_bitboard.zero();
         self.black_control_bitboard.zero();
 
-        for x in self.all_moves().iter() {
-            self.update_color_control_square_for_move(x.clone(), &turn);
+        // for x in self.all_moves() {
+        //     self.update_color_control_square_for_move(x.clone(), &turn);
+        // }
+
+        for x in self.white_current_moves.clone().iter() {
+            self.update_color_control_square_for_move(x.clone(), &PieceColor::White);
+        }
+
+        for x in self.black_current_moves.clone().iter() {
+            self.update_color_control_square_for_move(x.clone(), &PieceColor::Black);
         }
     }
 
@@ -865,7 +940,11 @@ impl Board {
                     from: current_piece_idx,
                     to: front,
                     move_type: MoveType::PawnPush {
-                        promotion_piece: None,
+                        promotion_piece: if front_co.y == 7 || front_co.y == 0 {
+                            Some(PieceType::Queen)
+                        } else {
+                            None
+                        },
                     },
                 });
                 // checking for double push
@@ -911,7 +990,6 @@ impl Board {
         // pawn we can capture it en passant
 
         if self.move_history.is_empty() {
-            tracing::debug!("No Move history");
             return None;
         }
 
