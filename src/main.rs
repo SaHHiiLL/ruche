@@ -1,6 +1,8 @@
 #![deny(missing_docs)]
 #![allow(missing_docs)]
 
+use std::ops::Not;
+
 use raylib::prelude::*;
 use tracing::Level;
 
@@ -34,6 +36,11 @@ fn main() {
             } else {
                 game.select_piece(&d);
             }
+        }
+
+        //TODO: use keyboard select the piece otherwise it'll be long kek
+        if d.is_key_pressed(raylib::ffi::KeyboardKey::KEY_D) {
+            game.pawn_promotion = game.pawn_promotion.not();
         }
 
         if d.is_key_pressed(raylib::ffi::KeyboardKey::KEY_ESCAPE) {

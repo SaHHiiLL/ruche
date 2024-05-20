@@ -1,4 +1,4 @@
-use crate::board::{self, Move, Piece, PieceColor, PieceType};
+use crate::board::{self, Move, MoveError, Piece, PieceColor, PieceType};
 use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Clone, Default)]
@@ -36,6 +36,9 @@ pub struct Game {
     cursor: Vector2,
     pub selected: Option<Vector2>,
     image_map: HashMap<Piece, raylib::core::texture::Texture2D>,
+
+    pub pawn_promotion: bool,
+    can_promote_to: Vec<Move>,
 }
 
 impl Game {
@@ -50,6 +53,9 @@ impl Game {
             cursor: Vector2 { x: 0.0, y: 0.0 },
             selected: None,
             image_map: HashMap::new(),
+
+            pawn_promotion: false,
+            can_promote_to: vec![],
         }
     }
 
@@ -93,10 +99,30 @@ impl Game {
         let to = self
             .board
             .get_square(self.cursor.x as usize, self.cursor.y as usize);
-        if self.board.make_move(from, to) {
-            self.board.toggle_turn();
-            self.board.generate_moves_current_position();
-            self.unset_selected();
+
+        // if self.board.make_move(from, to) {
+        //     self.board.toggle_turn();
+        //     self.board.generate_moves_current_position();
+        //     self.unset_selected();
+        // }
+
+        //TODO: chanege None to pawn promotion
+        match self.board.make_move(from, to, None) {
+            Ok(_) => {
+                self.board.toggle_turn();
+                self.board.generate_moves_current_position();
+                self.unset_selected();
+                self.pawn_promotion = false;
+            }
+            Err(e) => {
+                if let MoveError::MultipleLeagalMove(moves) = e {
+                    self.pawn_promotion = true;
+                    self.can_promote_to.clear();
+                    self.can_promote_to.extend(moves);
+                } else {
+                    tracing::debug!("Invalid Move");
+                }
+            }
         }
     }
 
@@ -174,20 +200,6 @@ impl Game {
                             legal_color,
                         );
                     }
-
-                    // if let Some(first) = moves.clone().iter().next() {
-                    //     let first = first.to.to_vec2();
-                    //     let first = dbg!(first);
-                    //     if first.x as usize == x && first.y as usize == y {
-                    //         d.draw_rectangle(
-                    //             (first.x as u32 + x as u32 * self.cell_size) as i32,
-                    //             (first.y as u32 + y as u32 * self.cell_size) as i32,
-                    //             self.cell_size as i32,
-                    //             self.cell_size as i32,
-                    //             legal_color,
-                    //         );
-                    //     }
-                    // }
                 }
             } else {
                 d.draw_rectangle(
@@ -200,6 +212,22 @@ impl Game {
             }
 
             self.draw_piece(d, idx, (*p).into());
+        }
+
+        if self.pawn_promotion {
+            let y = self.y_offset;
+            let pr = raylib::core::color::Color::from_hex("11fff0").expect("Error parsing hex");
+            for x in (0..4) {
+                let x = self.x_offset + x * (self.cell_size * 2);
+
+                d.draw_rectangle(
+                    x as i32,
+                    y as i32,
+                    self.cell_size as i32 * 2,
+                    self.cell_size as i32 * 2,
+                    pr,
+                )
+            }
         }
     }
 

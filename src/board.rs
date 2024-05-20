@@ -269,6 +269,11 @@ pub struct Board {
     is_white_turn: bool,
 }
 
+pub enum MoveError {
+    InvalidMove,
+    MultipleLeagalMove(Vec<Move>),
+}
+
 impl Board {
     pub fn clone_board(&self) -> Vec<u16> {
         self.board.to_vec().clone()
@@ -330,6 +335,16 @@ impl Board {
         None
     }
 
+    /// Gets all the moves that match the same [to] and [from] should only be used for
+    /// [MoveType::PawnPush] and [MoveType::PawnCapture] with pawn promotion on
+    fn get_all_avaliable_moves(&self, from: usize, to: usize) -> Vec<Move> {
+        self.get_moves_for_turn()
+            .iter()
+            .filter(|m| m.from == from && m.to == to)
+            .map(|m| m.clone())
+            .collect::<Vec<_>>()
+    }
+
     /// Adds moves to `self.current_moves` whilest updating the white/black board control bitboard
     fn update_color_control_square_for_move(&mut self, mov: Move, color: &PieceColor) {
         let bitboard = match color {
@@ -345,28 +360,35 @@ impl Board {
         }
     }
 
-    pub fn make_move(&mut self, from: usize, to: usize) -> bool {
+    pub fn make_move(
+        &mut self,
+        from: usize,
+        to: usize,
+        promoting_pawn_type: Option<PieceType>,
+    ) -> Result<(), MoveError> {
         let piece = self.get_piece_at_index(from);
         let target = self.get_piece_at_index(to);
 
         if piece.get_type() == PieceType::None {
             tracing::error!("Invalid piece type");
-            return false;
+            return Err(MoveError::InvalidMove);
         }
 
         if piece.get_color() != self.get_turn() {
             tracing::error!("Invalid turn");
-            return false;
+            return Err(MoveError::InvalidMove);
         }
 
         // if no move is available return
-        let Some(mo) = self.is_move_avaliable(from, to) else {
+        let Some(mo) = self.get_all_avaliable_moves(from, to).pop() else {
             tracing::warn!("Move Not avaliable");
-            return false;
+            return Err(MoveError::InvalidMove);
         };
 
-        assert!(mo.from == from);
-        assert!(mo.to == to);
+        let moves = self.get_all_avaliable_moves(from, to);
+        if moves.len() > 1 {
+            return Err(MoveError::MultipleLeagalMove(moves));
+        }
 
         match mo.move_type {
             MoveType::PawnDoublePush => {
@@ -482,9 +504,9 @@ impl Board {
             }
             MoveType::None => todo!(),
         }
-        self.move_history.push(mo);
+        self.move_history.push(mo.clone());
 
-        true
+        Ok(())
     }
 
     fn promote_pawn(&mut self, mo: &Move, promoting_to: PieceType) {
@@ -936,17 +958,34 @@ impl Board {
             let front_piece = self.get_piece_at_index(front);
             if front_piece.get_type() == PieceType::None {
                 // Add front move to the list
-                res.push(Move {
-                    from: current_piece_idx,
-                    to: front,
-                    move_type: MoveType::PawnPush {
-                        promotion_piece: if front_co.y == 7 || front_co.y == 0 {
-                            Some(PieceType::Queen)
-                        } else {
-                            None
+                // TODO: add other piece type here
+
+                if front_co.y == 7 || front_co.y == 0 {
+                    let promotion_piece = &[
+                        PieceType::Queen,
+                        PieceType::Bishop,
+                        PieceType::Knight,
+                        PieceType::Rook,
+                    ];
+
+                    for p in promotion_piece.iter() {
+                        res.push(Move {
+                            from: current_piece_idx,
+                            to: front,
+                            move_type: MoveType::PawnPush {
+                                promotion_piece: Some(*p),
+                            },
+                        });
+                    }
+                } else {
+                    res.push(Move {
+                        from: current_piece_idx,
+                        to: front,
+                        move_type: MoveType::PawnPush {
+                            promotion_piece: None,
                         },
-                    },
-                });
+                    });
+                }
                 // checking for double push
                 if co.y == 1 && piece.piece_color == PieceColor::White {
                     let double_front = self.get_square_isize(front_co.x, front_co.y + 1);
@@ -1042,6 +1081,7 @@ impl Board {
         None
     }
 
+    //TODO: add pawn promotion here too
     fn pawn_capture(
         &self,
         piece: Piece,
