@@ -131,6 +131,14 @@ pub struct Coordinate {
     y: usize,
 }
 
+impl From<usize> for Coordinate {
+    fn from(idx: usize) -> Self {
+        let x = idx % 8;
+        let y = idx / 8;
+        Coordinate { x, y }
+    }
+}
+
 /// Uses isize instea of usize to safely determine can an index be out of bounds or not
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 struct SafeCoordinate {
@@ -379,16 +387,58 @@ impl Board {
             return Err(MoveError::InvalidMove);
         }
 
-        // if no move is available return
-        let Some(mo) = self.get_all_avaliable_moves(from, to).pop() else {
-            tracing::warn!("Move Not avaliable");
-            return Err(MoveError::InvalidMove);
+        let mut mo;
+
+        // // if no move is available return
+        // mo = self.get_all_avaliable_moves(from, to).pop() else {
+        //     tracing::warn!("Move Not avaliable");
+        //     return Err(MoveError::InvalidMove);
+        // };
+
+        mo = match self.get_all_avaliable_moves(from, to).pop() {
+            Some(mo) => mo,
+            None => {
+                tracing::warn!("Move Not avaliable");
+                return Err(MoveError::InvalidMove);
+            }
         };
 
         let moves = self.get_all_avaliable_moves(from, to);
+
         if moves.len() > 1 {
-            return Err(MoveError::MultipleLeagalMove(moves));
+            if let Some(pt) = promoting_pawn_type {
+                for m in moves.iter() {
+                    match m.move_type {
+                        MoveType::PawnPush { promotion_piece } => {
+                            if let Some(pp) = promotion_piece {
+                                if pp == pt {
+                                    mo = m.clone();
+                                }
+                            }
+                        }
+
+                        MoveType::PawnCapture { promotion_piece } => {
+                            if let Some(pp) = promotion_piece {
+                                if pp == pt {
+                                    mo = m.clone();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            } else {
+                return Err(MoveError::MultipleLeagalMove(moves));
+            }
         }
+
+        // if moves.len() > 1 {
+        //     if promoting_pawn_type.is_none() {
+        //         return Err(MoveError::MultipleLeagalMove(moves));
+        //     } else {
+        //         for
+        //     }
+        // }
 
         match mo.move_type {
             MoveType::PawnDoublePush => {
@@ -1010,12 +1060,37 @@ impl Board {
                 }
             }
         }
+
+        fn capture_promotion(m: Move, res: &mut Vec<Move>) {
+            let front_co = Coordinate::from(m.to);
+            if front_co.y == 7 || front_co.y == 0 {
+                let promotion_piece = &[
+                    PieceType::Queen,
+                    PieceType::Bishop,
+                    PieceType::Knight,
+                    PieceType::Rook,
+                ];
+
+                for p in promotion_piece.iter() {
+                    res.push(Move {
+                        from: m.from,
+                        to: m.to,
+                        move_type: MoveType::PawnPush {
+                            promotion_piece: Some(*p),
+                        },
+                    });
+                }
+            } else {
+                res.push(m);
+            }
+        }
+
         if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Right) {
-            res.push(m);
+            capture_promotion(m, &mut res)
         }
 
         if let Some(m) = self.pawn_capture(piece, &co, PawnCaptureDirection::Left) {
-            res.push(m);
+            capture_promotion(m, &mut res)
         }
 
         if let Some(m) = self.enpassant_capture(piece, &co) {

@@ -39,6 +39,9 @@ pub struct Game {
 
     pub pawn_promotion: bool,
     can_promote_to: Vec<Move>,
+    pawn_promotion_img_map: HashMap<Piece, raylib::core::texture::Texture2D>,
+
+    pawn_promotion_from_to: (usize, usize),
 }
 
 impl Game {
@@ -56,6 +59,8 @@ impl Game {
 
             pawn_promotion: false,
             can_promote_to: vec![],
+            pawn_promotion_img_map: HashMap::new(),
+            pawn_promotion_from_to: (0, 0),
         }
     }
 
@@ -83,6 +88,19 @@ impl Game {
         );
     }
 
+    fn draw_piece_for_promotion<T>(&self, d: &mut T, x: i32, piece: Piece)
+    where
+        T: raylib::core::drawing::RaylibDraw,
+    {
+        let texture = self.pawn_promotion_img_map.get(&piece).unwrap();
+        d.draw_texture(
+            texture,
+            x,
+            self.y_offset as i32,
+            raylib::core::color::Color::WHITE,
+        );
+    }
+
     pub fn unset_selected(&mut self) {
         self.selected = None;
     }
@@ -100,12 +118,6 @@ impl Game {
             .board
             .get_square(self.cursor.x as usize, self.cursor.y as usize);
 
-        // if self.board.make_move(from, to) {
-        //     self.board.toggle_turn();
-        //     self.board.generate_moves_current_position();
-        //     self.unset_selected();
-        // }
-
         //TODO: chanege None to pawn promotion
         match self.board.make_move(from, to, None) {
             Ok(_) => {
@@ -119,6 +131,7 @@ impl Game {
                     self.pawn_promotion = true;
                     self.can_promote_to.clear();
                     self.can_promote_to.extend(moves);
+                    self.pawn_promotion_from_to = (from, to);
                 } else {
                     tracing::debug!("Invalid Move");
                 }
@@ -193,8 +206,8 @@ impl Game {
 
                     if let Some(found) = moves {
                         d.draw_rectangle(
-                            (self.x_offset as u32 + found.x as u32 * self.cell_size) as i32,
-                            (self.y_offset as u32 + found.y as u32 * self.cell_size) as i32,
+                            (self.x_offset + found.x as u32 * self.cell_size) as i32,
+                            (self.y_offset + found.y as u32 * self.cell_size) as i32,
                             self.cell_size as i32,
                             self.cell_size as i32,
                             legal_color,
@@ -217,8 +230,29 @@ impl Game {
         if self.pawn_promotion {
             let y = self.y_offset;
             let pr = raylib::core::color::Color::from_hex("11fff0").expect("Error parsing hex");
-            for x in (0..4) {
-                let x = self.x_offset + x * (self.cell_size * 2);
+
+            let piece_color = self.board.get_turn();
+            let promotion_piece = [
+                Piece {
+                    piece_type: PieceType::Bishop,
+                    piece_color,
+                },
+                Piece {
+                    piece_type: PieceType::Knight,
+                    piece_color,
+                },
+                Piece {
+                    piece_type: PieceType::Rook,
+                    piece_color,
+                },
+                Piece {
+                    piece_type: PieceType::Queen,
+                    piece_color,
+                },
+            ];
+
+            for (x, p) in promotion_piece.iter().enumerate() {
+                let x = self.x_offset + x as u32 * (self.cell_size * 2);
 
                 d.draw_rectangle(
                     x as i32,
@@ -226,9 +260,38 @@ impl Game {
                     self.cell_size as i32 * 2,
                     self.cell_size as i32 * 2,
                     pr,
-                )
+                );
+                self.draw_piece_for_promotion(d, x as i32, *p);
             }
         }
+    }
+
+    pub fn selected_pawn_promotion(&mut self, idx: usize) {
+        let promotion_piece = [
+            PieceType::Bishop,
+            PieceType::Knight,
+            PieceType::Rook,
+            PieceType::Queen,
+        ];
+        match self.board.make_move(
+            self.pawn_promotion_from_to.0,
+            self.pawn_promotion_from_to.1,
+            Some(promotion_piece[idx]),
+        ) {
+            Ok(_) => {
+                self.board.toggle_turn();
+                self.board.generate_moves_current_position();
+                self.unset_selected();
+                self.pawn_promotion = false;
+            }
+            Err(e) => {
+                if let MoveError::MultipleLeagalMove(moves) = e {
+                    unreachable!("Should not happen");
+                } else {
+                    tracing::debug!("Invalid Move");
+                }
+            }
+        };
     }
 
     pub fn follow_mouse(&mut self, d: &raylib::core::RaylibHandle) {
@@ -261,7 +324,50 @@ impl Game {
         }
     }
 
+    fn load_images_for_pawn_promotion(&mut self) {
+        let pieces = [
+            Piece {
+                piece_type: PieceType::Rook,
+                piece_color: PieceColor::White,
+            },
+            Piece {
+                piece_type: PieceType::Knight,
+                piece_color: PieceColor::White,
+            },
+            Piece {
+                piece_type: PieceType::Bishop,
+                piece_color: PieceColor::White,
+            },
+            Piece {
+                piece_type: PieceType::Queen,
+                piece_color: PieceColor::White,
+            },
+            Piece {
+                piece_type: PieceType::Rook,
+                piece_color: PieceColor::Black,
+            },
+            Piece {
+                piece_type: PieceType::Knight,
+                piece_color: PieceColor::Black,
+            },
+            Piece {
+                piece_type: PieceType::Bishop,
+                piece_color: PieceColor::Black,
+            },
+            Piece {
+                piece_type: PieceType::Queen,
+                piece_color: PieceColor::Black,
+            },
+        ];
+
+        for piece in pieces.iter() {
+            self.pawn_promotion_img_map
+                .insert(*piece, self.get_texture(piece, self.cell_size as i32 * 2));
+        }
+    }
+
     pub fn load_images(&mut self) {
+        self.load_images_for_pawn_promotion();
         let pieces = [
             Piece {
                 piece_type: PieceType::Pawn,
@@ -314,11 +420,12 @@ impl Game {
         ];
 
         for piece in pieces.iter() {
-            self.image_map.insert(*piece, self.get_texture(piece));
+            self.image_map
+                .insert(*piece, self.get_texture(piece, self.cell_size as i32));
         }
     }
 
-    fn get_texture(&self, piece: &Piece) -> raylib::core::texture::Texture2D {
+    fn get_texture(&self, piece: &Piece, size: i32) -> raylib::core::texture::Texture2D {
         let mut buffer = String::from("./resource/output/");
         match piece.get_color() {
             PieceColor::White => buffer.push('w'),
@@ -348,7 +455,7 @@ impl Game {
             })
             .expect("Error loading image");
 
-        image.resize(self.cell_size as i32, self.cell_size as i32);
+        image.resize(size, size);
         //
         // SAFETY: LoadTextureFromImage is a safe function
         unsafe {
